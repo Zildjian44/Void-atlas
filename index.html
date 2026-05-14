@@ -339,66 +339,63 @@ function GalaxyView(props){
 function SolarSystemView(props){
   var system=props.system,onGalaxy=props.onGalaxy,onOrbitPlanet=props.onOrbitPlanet,onStarbase=props.onStarbase;
   if(!system)return null;
-  var CX=150,CY=130,ORBIT_R=[38,62,84,103,120];
+  var PSIZES={"Gas Giant":15,"Ocean":13,"Jungle":13,"Volcanic":12,"Ice World":12,"Desert":10,"Rocky":9,"Barren":8};
+  var CX=150,CY=155,ORBIT_R=[48,75,100,122,141];
   var planetData=system.planets.map(function(p,i){
     var r=ORBIT_R[Math.min(i,ORBIT_R.length-1)];
     var angle=(i/system.planets.length)*Math.PI*2+0.9;
     var px=CX+r*Math.cos(angle),py=CY+r*Math.sin(angle);
-    var labelY=py>CY?py+7+8:py-7-3;
-    return Object.assign({},p,{r:6,orbitR:r,px:px,py:py,labelY:labelY});
+    var ps=PSIZES[p.type]||10;
+    var dx=px-CX,dy=py-CY,dist=Math.sqrt(dx*dx+dy*dy)||1;
+    var ux=dx/dist,uy=dy/dist;
+    var lx=Math.max(8,Math.min(292,px+ux*(ps+14)));
+    var ly=py+uy*(ps+14)+3.5;
+    var anchor=ux>0.3?"start":ux<-0.3?"end":"middle";
+    return Object.assign({},p,{r:ps,orbitR:r,px:px,py:py,lx:lx,ly:ly,anchor:anchor});
   });
-  var sbR=Math.min(ORBIT_R[Math.min(system.planets.length,ORBIT_R.length-1)]+14,118),sbAngle=Math.PI*1.25;
+  var sbR=Math.min(ORBIT_R[Math.min(system.planets.length,ORBIT_R.length-1)]+14,143),sbAngle=Math.PI*1.25;
   var sbX=CX+sbR*Math.cos(sbAngle),sbY=CY+sbR*Math.sin(sbAngle);
   var allRings=[],seenR={};planetData.forEach(function(p){if(!seenR[p.orbitR]){seenR[p.orbitR]=true;allRings.push(p.orbitR);}});if(!seenR[sbR])allRings.push(sbR);
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
         <div><div style={{fontSize:"18px",fontWeight:"700",color:system.starColor}}>{system.name}</div><div style={{fontSize:"13px",color:C.dim}}>{system.planets.length} planets{system.enemies.length>0?<span style={{color:C.red}}> • ⚠ {system.enemies.length} hostile{system.enemies.length>1?"s":""}</span>:""}{system.artifactFragment&&!system.artifactCollected?<span style={{color:C.purple}}> • ◆ artifact</span>:""}</div></div>
         <button onClick={onGalaxy} style={bs(C.cyan,true)}>↩ Galaxy</button>
       </div>
-      <svg width="100%" viewBox="0 0 300 270" style={{display:"block",marginBottom:"6px"}}>
+      <svg width="100%" viewBox="0 0 300 325" style={{display:"block",marginBottom:"6px"}}>
         {allRings.map(function(r){return <circle key={r} cx={CX} cy={CY} r={r} fill="none" stroke="rgba(160,130,255,0.45)" strokeWidth="1.5"/>;})}
-        <circle cx={CX} cy={CY} r="22" fill={system.starColor} opacity="0.12"/>
-        <circle cx={CX} cy={CY} r="13" fill={system.starColor}/>
-        <circle cx={CX-4} cy={CY-4} r="5" fill="white" opacity="0.35"/>
-        <text x={CX} y={CY+23} textAnchor="middle" fill={system.starColor} fontSize="6" opacity="0.6">{system.name}</text>
+        <circle cx={CX} cy={CY} r="28" fill={system.starColor} opacity="0.12"/>
+        <circle cx={CX} cy={CY} r="16" fill={system.starColor}/>
+        <circle cx={CX-5} cy={CY-5} r="6" fill="white" opacity="0.3"/>
+        <text x={CX} y={CY+28} textAnchor="middle" fill={system.starColor} fontSize="7" opacity="0.7">{system.name}</text>
         {planetData.map(function(p){return(
           <g key={p.id} onClick={function(){onOrbitPlanet(p.id);}} style={{cursor:"pointer"}}>
-            <circle cx={p.px} cy={p.py} r={p.r+7} fill="transparent"/>
-            <circle cx={p.px} cy={p.py} r={p.r} fill={p.color} stroke="rgba(255,255,255,0.2)" strokeWidth="0.5"/>
-            <circle cx={p.px-p.r*0.3} cy={p.py-p.r*0.35} r={p.r*0.38} fill="white" opacity="0.14"/>
-            {p.scanned&&<circle cx={p.px+p.r*0.7} cy={p.py-p.r*0.7} r="2" fill={C.cyan}/>}
-            {p.surfaceStats&&p.surfaceStats.collectedRes===p.surfaceStats.totalRes&&p.surfaceStats.totalRes>0&&<circle cx={p.px-p.r*0.7} cy={p.py-p.r*0.7} r="2" fill={C.green}/>}
-            <text x={p.px} y={p.labelY} textAnchor="middle" fill={p.color} fontSize="6.5" fontWeight="600" opacity="0.95">{p.name}</text>
+            <circle cx={p.px} cy={p.py} r={p.r+9} fill="transparent"/>
+            <circle cx={p.px} cy={p.py} r={p.r} fill={p.color} stroke="rgba(255,255,255,0.25)" strokeWidth="0.8"/>
+            <circle cx={p.px-p.r*0.3} cy={p.py-p.r*0.35} r={p.r*0.38} fill="white" opacity="0.18"/>
+            {p.scanned&&<circle cx={p.px+p.r*0.7} cy={p.py-p.r*0.7} r="2.5" fill={C.cyan}/>}
+            {p.surfaceStats&&p.surfaceStats.collectedRes===p.surfaceStats.totalRes&&p.surfaceStats.totalRes>0&&<circle cx={p.px-p.r*0.7} cy={p.py-p.r*0.7} r="2.5" fill={C.green}/>}
+            <text x={p.lx} y={p.ly} textAnchor={p.anchor} fill={p.color} fontSize="10" fontWeight="700" opacity="0.95">{p.name}</text>
           </g>
         );})}
         <g onClick={onStarbase} style={{cursor:"pointer"}}>
-          {/* Hit area */}
-          <rect x={sbX-22} y={sbY-18} width="44" height="38" fill="transparent"/>
-          {/* Glow ring */}
-          <circle cx={sbX} cy={sbY} r="11" fill="none" stroke={C.purple} strokeWidth="0.5" opacity="0.3"/>
-          {/* E/W arms */}
-          <rect x={sbX-16} y={sbY-1.5} width="32" height="3" fill="#0c0828" stroke={C.purple} strokeWidth="0.6" opacity="0.9"/>
-          {/* N arm */}
-          <rect x={sbX-1.5} y={sbY-14} width="3" height="12" fill="#0c0828" stroke={C.blue} strokeWidth="0.5" opacity="0.9"/>
-          {/* Solar panels W */}
-          <rect x={sbX-21} y={sbY-5} width="6" height="10" fill="#0a1428" stroke={C.blue} strokeWidth="0.6"/>
-          <line x1={sbX-18} y1={sbY-5} x2={sbX-18} y2={sbY+5} stroke={C.blue} strokeWidth="0.5" opacity="0.5"/>
-          {/* Solar panels E */}
-          <rect x={sbX+15} y={sbY-5} width="6" height="10" fill="#0a1428" stroke={C.blue} strokeWidth="0.6"/>
-          <line x1={sbX+18} y1={sbY-5} x2={sbX+18} y2={sbY+5} stroke={C.blue} strokeWidth="0.5" opacity="0.5"/>
-          {/* Running lights */}
-          <circle cx={sbX-20} cy={sbY} r="1.5" fill={C.blue} opacity="0.9"/>
-          <circle cx={sbX+20} cy={sbY} r="1.5" fill={C.blue} opacity="0.9"/>
-          <circle cx={sbX} cy={sbY-14} r="1.2" fill={C.red} opacity="0.8"/>
-          {/* Central hub */}
-          <circle cx={sbX} cy={sbY} r="6" fill="#140830" stroke={C.purple} strokeWidth="1.2"/>
-          <circle cx={sbX} cy={sbY} r="3" fill={C.purple} opacity="0.85"/>
-          {/* Label */}
-          <text x={sbX} y={sbY+21} textAnchor="middle" fill={C.purple} fontSize="5.5" letterSpacing="0.5" opacity="0.85">STARBASE</text>
+          <rect x={sbX-24} y={sbY-20} width="48" height="42" fill="transparent"/>
+          <circle cx={sbX} cy={sbY} r="13" fill="none" stroke={C.purple} strokeWidth="0.6" opacity="0.3"/>
+          <rect x={sbX-18} y={sbY-1.8} width="36" height="3.6" fill="#0c0828" stroke={C.purple} strokeWidth="0.7" opacity="0.9"/>
+          <rect x={sbX-1.8} y={sbY-16} width="3.6" height="14" fill="#0c0828" stroke={C.blue} strokeWidth="0.6" opacity="0.9"/>
+          <rect x={sbX-24} y={sbY-6} width="7" height="12" fill="#0a1428" stroke={C.blue} strokeWidth="0.7"/>
+          <line x1={sbX-20} y1={sbY-6} x2={sbX-20} y2={sbY+6} stroke={C.blue} strokeWidth="0.6" opacity="0.5"/>
+          <rect x={sbX+17} y={sbY-6} width="7" height="12" fill="#0a1428" stroke={C.blue} strokeWidth="0.7"/>
+          <line x1={sbX+21} y1={sbY-6} x2={sbX+21} y2={sbY+6} stroke={C.blue} strokeWidth="0.6" opacity="0.5"/>
+          <circle cx={sbX-23} cy={sbY} r="2" fill={C.blue} opacity="0.9"/>
+          <circle cx={sbX+23} cy={sbY} r="2" fill={C.blue} opacity="0.9"/>
+          <circle cx={sbX} cy={sbY-16} r="1.5" fill={C.red} opacity="0.8"/>
+          <circle cx={sbX} cy={sbY} r="7" fill="#140830" stroke={C.purple} strokeWidth="1.4"/>
+          <circle cx={sbX} cy={sbY} r="3.5" fill={C.purple} opacity="0.85"/>
+          <text x={sbX} y={sbY+24} textAnchor="middle" fill={C.purple} fontSize="6.5" letterSpacing="0.5" opacity="0.9">STARBASE</text>
         </g>
       </svg>
-      <div style={{textAlign:"center",fontSize:"13px",color:C.dim}}>Tap a planet to orbit • Tap ⬡ for starbase</div>
+      <div style={{textAlign:"center",fontSize:"13px",color:C.dim}}>Tap a planet to orbit • Tap starbase to dock</div>
     </div>
   );
 }
@@ -459,7 +456,7 @@ function PlanetSVG(props){
   }
 
   return(
-    <svg width="180" height="180" viewBox="0 0 100 100" style={{display:"block"}}>
+    <svg width={props.size||180} height={props.size||180} viewBox="0 0 100 100" style={{display:"block"}}>
       <defs>
         <clipPath id={uid+"c"}><circle cx="50" cy="50" r="44"/></clipPath>
         <radialGradient id={uid+"lg"} cx="32%" cy="28%" r="72%">
@@ -485,65 +482,62 @@ function OrbitView(props){
   var stats=planet.surfaceStats;
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
-        <div><div style={{fontSize:"18px",fontWeight:"700",color:planet.color}}>{planet.type}</div><div style={{fontSize:"13px",color:C.dim}}>{system.name} system</div></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div><div style={{fontSize:"18px",fontWeight:"700",color:planet.color}}>{planet.name}</div><div style={{fontSize:"13px",color:C.dim}}>{planet.type} · {system.name}</div></div>
         <button onClick={onBack} style={bs(C.dim,true)}>← System</button>
       </div>
-      <div style={{display:"flex",justifyContent:"center",marginBottom:"14px"}}>
-        <PlanetSVG planet={planet} systemId={system.id}/>
+
+      <div style={{display:"flex",justifyContent:"center",marginBottom:"8px"}}>
+        <PlanetSVG planet={planet} systemId={system.id} size={130}/>
       </div>
 
       {stats&&(
-        <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:"12px",padding:"10px 12px",marginBottom:"12px"}}>
-          <div style={{fontSize:"12px",letterSpacing:"2px",color:C.dim,marginBottom:"8px"}}>SURVEY COMPLETION</div>
-          <MiniBar label="Resources collected" val={stats.collectedRes} total={stats.totalRes} color={C.orange}/>
-          {stats.totalRuins>0&&<MiniBar label="Ruins discovered" val={stats.lootedRuins} total={stats.totalRuins} color={C.yellow}/>}
+        <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:"10px",padding:"8px 12px",marginBottom:"8px",display:"flex",gap:"16px",alignItems:"center"}}>
+          <span style={{fontSize:"12px",color:C.dim,flexShrink:0}}>SURVEY</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:"12px",color:C.dim,marginBottom:"2px"}}>Resources <span style={{color:C.orange}}>{stats.collectedRes}/{stats.totalRes}</span></div>
+            <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:Math.round((stats.collectedRes/Math.max(1,stats.totalRes))*100)+"%",height:"100%",background:C.orange,borderRadius:"2px"}}/></div>
+          </div>
+          {stats.totalRuins>0&&<div style={{flex:1}}>
+            <div style={{fontSize:"12px",color:C.dim,marginBottom:"2px"}}>Ruins <span style={{color:C.yellow}}>{stats.lootedRuins}/{stats.totalRuins}</span></div>
+            <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:Math.round((stats.lootedRuins/Math.max(1,stats.totalRuins))*100)+"%",height:"100%",background:C.yellow,borderRadius:"2px"}}/></div>
+          </div>}
         </div>
       )}
 
       {planet.scanned&&(
-        <div style={{marginBottom:"14px"}}>
-          <div style={{fontSize:"12px",letterSpacing:"2px",color:C.dim,marginBottom:"6px",textAlign:"center"}}>
+        <div style={{marginBottom:"8px",textAlign:"center"}}>
+          <div style={{fontSize:"11px",letterSpacing:"2px",color:C.dim,marginBottom:"5px"}}>
             {sensorLevel===0?"ROUGH SURFACE SCAN":sensorLevel===1?"FULL TERRAIN MAPPING":"FULL MAPPING + RESOURCES"}
           </div>
-
           {sensorLevel===0&&surfaceGrid&&(function(){
             var rough=[];
             for(var ry2=0;ry2<5;ry2++)for(var rx2=0;rx2<5;rx2++){
               var sy=Math.min(ry2*4,19),sx=Math.min(rx2*4,19);
               rough.push({x:rx2,y:ry2,type:surfaceGrid[sy][sx].type});
             }
-            return(
-              <div style={{display:"flex",justifyContent:"center"}}>
-                <svg width="160" height="160" viewBox="0 0 5 5" style={{borderRadius:"8px",border:"1px solid "+C.border,imageRendering:"pixelated"}}>
-                  {rough.map(function(cell){var t=TERRAIN[cell.type]||TERRAIN.plains;return <rect key={cell.x+","+cell.y} x={cell.x} y={cell.y} width={1} height={1} fill={t.bg}/>;} )}
-                  <circle cx="2.5" cy="2.5" r="0.35" fill={C.cyan} opacity="0.8"/>
-                </svg>
-              </div>
-            );
+            return(<svg width="120" height="120" viewBox="0 0 5 5" style={{borderRadius:"6px",border:"1px solid "+C.border,imageRendering:"pixelated",display:"block",margin:"0 auto"}}>
+              {rough.map(function(cell){var t=TERRAIN[cell.type]||TERRAIN.plains;return <rect key={cell.x+","+cell.y} x={cell.x} y={cell.y} width={1} height={1} fill={t.bg}/>;} )}
+              <circle cx="2.5" cy="2.5" r="0.35" fill={C.cyan} opacity="0.8"/>
+            </svg>);
           })()}
-
           {sensorLevel>=1&&surfaceGrid&&(
-            <div style={{display:"flex",justifyContent:"center"}}>
-              <svg width="160" height="160" viewBox="0 0 20 20" style={{borderRadius:"8px",border:"1px solid "+C.border,imageRendering:"pixelated"}}>
-                {surfaceGrid.map(function(row,y){return row.map(function(tile,x){
-                  var terrain=TERRAIN[tile.type]||TERRAIN.plains;
-                  var resCol=sensorLevel>=2&&tile.resource?RES_COLORS[tile.resource]:null;
-                  return(<g key={x+","+y}><rect x={x} y={y} width={1} height={1} fill={terrain.bg}/>{resCol&&<circle cx={x+0.5} cy={y+0.5} r="0.22" fill={resCol} opacity="0.9"/>}</g>);
-                });} )}
-                <circle cx="10.5" cy="10.5" r="0.5" fill={C.cyan} opacity="0.9"/>
-              </svg>
-            </div>
+            <svg width="120" height="120" viewBox="0 0 20 20" style={{borderRadius:"6px",border:"1px solid "+C.border,imageRendering:"pixelated",display:"block",margin:"0 auto"}}>
+              {surfaceGrid.map(function(row,y){return row.map(function(tile,x){
+                var terrain=TERRAIN[tile.type]||TERRAIN.plains;
+                var resCol=sensorLevel>=2&&tile.resource?RES_COLORS[tile.resource]:null;
+                return(<g key={x+","+y}><rect x={x} y={y} width={1} height={1} fill={terrain.bg}/>{resCol&&<circle cx={x+0.5} cy={y+0.5} r="0.22" fill={resCol} opacity="0.9"/>}</g>);
+              });} )}
+              <circle cx="10.5" cy="10.5" r="0.5" fill={C.cyan} opacity="0.9"/>
+            </svg>
           )}
-
-          {sensorLevel===0&&<div style={{fontSize:"12px",color:C.dim,textAlign:"center",marginTop:"4px"}}>Upgrade sensors for full terrain mapping</div>}
-          {sensorLevel===1&&<div style={{fontSize:"12px",color:C.dim,textAlign:"center",marginTop:"4px"}}>Upgrade sensors further to detect resources</div>}
+          {sensorLevel<2&&<div style={{fontSize:"11px",color:C.dim,marginTop:"4px"}}>{sensorLevel===0?"Upgrade sensors for full mapping":"Upgrade sensors to detect resources"}</div>}
         </div>
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-        <button onClick={onScan} style={bs(C.cyan,!planet.scanned)}>{planet.scanned?"✓ Scanned":"🔭 Scan Planet"}</button>
-        <button onClick={onLand} style={bs(C.green,true)}>🚀 Land</button>
+        <button onClick={onScan} style={bs(C.cyan,!planet.scanned)}>{planet.scanned?"✓ Scanned":"🔭 Scan"}</button>
+        <button onClick={onLand} style={bs(C.green,true)}>🚀 Land Rover</button>
       </div>
     </div>
   );
