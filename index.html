@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Void Atlas">
+  <title>Void Atlas</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script>
+    // Suppress Babel's in-browser transformer warning (cosmetic only, safe to ignore in dev)
+    var _cw=console.warn;
+    console.warn=function(){if(arguments[0]&&typeof arguments[0]==="string"&&arguments[0].indexOf("in-browser Babel")>=0)return;_cw.apply(console,arguments);};
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body{background:#07071a;overflow:hidden;position:fixed;width:100%;height:100%;-webkit-tap-highlight-color:transparent;}
+    #root{width:100%;height:100dvh;overflow:hidden;}
+    @keyframes nrgPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.22);}}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    var {useState,useEffect,useRef}=React;
+
+// ─── CONSTANTS ───────────────────────────────────────────────
+var isTablet=window.innerWidth>=768;
+var scl=isTablet?1.45:1;
+var PAD=isTablet?18:12;
+function px(n){return Math.round(n*scl)+"px";}
+var GW=7, GH=5;
+var NAMES=["Kepler","Vega","Arcturus","Sirius","Polaris","Rigel","Deneb","Altair","Procyon","Aldebaran","Spica","Antares","Fomalhaut","Mimosa","Acrux","Hadar","Menkent","Atria","Alnair","Peacock","Canopus","Capella","Betelgeuse","Achernar","Shaula"];
+var PLANET_TYPES=["Rocky","Gas Giant","Ice World","Volcanic","Ocean","Desert","Jungle","Barren","Crystalline","Fungal","Toxic","Frozen Gas Giant"];
+var STAR_COLORS=["#ffdd44","#ff7744","#4488ff","#ffffff","#ffaa66","#aaddff","#ff44aa","#44ffaa"];
+var ENEMY_TYPES=[
+  {name:"Pirate Scout",    maxHull:40, maxShields:15, atk:12, icon:"🏴‍☠️", reward:{metals:15,credits:60}},
+  {name:"Space Leviathan", maxHull:70, maxShields:0,  atk:18, icon:"🐙",   reward:{crystals:20,credits:40}},
+  {name:"Rebel Fighter",   maxHull:50, maxShields:25, atk:15, icon:"⚔️",   reward:{tech:10,credits:75}},
+  {name:"Alien Raider",    maxHull:45, maxShields:20, atk:22, icon:"👾",   reward:{crystals:12,tech:6,credits:85}},
+  {name:"Imperial Drone",  maxHull:35, maxShields:35, atk:14, icon:"🤖",   reward:{metals:25,credits:65}},
+  {name:"Void Wraith",     maxHull:55, maxShields:10, atk:25, icon:"👻",   reward:{crystals:15,tech:12,credits:90}},
+];
+var RUIN_REWARDS=[
+  {text:"Ancient weapon cache! Rover laser capacity increased.", laserBonus:2, bonus:{}},
+  {text:"Alien research station. Sensor data extracted.", bonus:{tech:30}},
+  {text:"Buried treasure vault unsealed.", bonus:{metals:40,crystals:30,credits:100}},
+  {text:"Crashed probe from another civilization. Components salvaged.", bonus:{tech:25,metals:20}},
+  {text:"Ancient power cell. Reactor specs copied.", bonus:{credits:150,tech:20}},
+  {text:"Abandoned colony. Emergency supplies intact.", bonus:{fuel:40,metals:30}},
+];
+var TERRAIN={
+  plains:  {name:"Plains",  bg:"#3a6e3a",hi:"#4e8a4e",passable:0},
+  desert:  {name:"Desert",  bg:"#d4b020",hi:"#e8cc30",passable:0},
+  forest:  {name:"Forest",  bg:"#1e4a22",hi:"#2a6030",passable:0},
+  rocky:   {name:"Rocky",   bg:"#72604e",hi:"#8a7460",passable:0},
+  mountain:{name:"Mountain",bg:"#7a7a7a",hi:"#989898",passable:1},
+  ice:     {name:"Ice",     bg:"#58b0d0",hi:"#72c8e4",passable:1},
+  ocean:   {name:"Ocean",   bg:"#1c52a0",hi:"#2868bc",passable:2},
+  lava:    {name:"Lava",    bg:"#c43000",hi:"#e04400",passable:2},
+};
+var TERRAIN_POOLS={
+  "Rocky":    ["mountain","mountain","desert","rocky","mountain"],
+  "Gas Giant":["plains","plains","rocky"],
+  "Ice World":["mountain","rocky","ice","mountain"],
+  "Volcanic": ["rocky","mountain","lava","rocky"],
+  "Ocean":    ["plains","forest","plains","rocky"],
+  "Desert":   ["rocky","mountain","desert","rocky"],
+  "Jungle":   ["plains","forest","rocky","plains"],
+  "Barren":   ["mountain","desert","rocky","mountain"],
+  "Crystalline":["mountain","mountain","rocky","ice","mountain"],
+  "Fungal":   ["plains","forest","forest","plains","rocky"],
+  "Toxic":    ["ocean","ocean","plains","ocean","rocky"],
+  "Frozen Gas Giant":["plains","ice","mountain","ice","plains"],
+};
+var PRIMARY_TERRAIN={
+  "Rocky":"rocky","Gas Giant":"plains","Ice World":"ice","Volcanic":"lava",
+  "Ocean":"ocean","Desert":"desert","Jungle":"forest","Barren":"rocky",
+  "Crystalline":"mountain","Fungal":"forest","Toxic":"ocean","Frozen Gas Giant":"ice",
+};
+// Passable terrain for the landing zone (must be traversable at chassis 0)
+var LANDING_TERRAIN={
+  "Rocky":"rocky","Gas Giant":"plains","Ice World":"rocky","Volcanic":"rocky",
+  "Ocean":"plains","Desert":"desert","Jungle":"forest","Barren":"rocky",
+  "Crystalline":"rocky","Fungal":"forest","Toxic":"plains","Frozen Gas Giant":"plains",
+};
+var SHIPS={
+  small: {name:"Scout",    maxHull:100,maxShields:50, maxPods:10, podCap:100},
+  medium:{name:"Freighter",maxHull:180,maxShields:90, maxPods:18, podCap:100, cost:{credits:800, metals:60,tech:30}},
+  large: {name:"Carrier",  maxHull:280,maxShields:150,maxPods:28, podCap:100, cost:{credits:2000,metals:150,tech:80,crystals:50}},
+};
+var TERRAIN_ENERGY={plains:1,desert:2,forest:2,rocky:3,mountain:5,ice:5,lava:7,ocean:5};
+var PLANET_TERRAIN_COLORS={
+  "Fungal":{
+    plains: {bg:"#3a1a5a",hi:"#52287a"},
+    forest: {bg:"#2a0a48",hi:"#3c1260"},
+    rocky:  {bg:"#5a3870",hi:"#724a8a"},
+    mountain:{bg:"#6a4880",hi:"#806098"},
+  },
+  "Toxic":{
+    ocean:  {bg:"#1a5a08",hi:"#2a7a0a"},
+    plains: {bg:"#2a4a0a",hi:"#3a6210"},
+    rocky:  {bg:"#3a4a1a",hi:"#4e622a"},
+    mountain:{bg:"#4a5a1a",hi:"#606e2a"},
+  },
+};
+function terrainColors(tileType,planetType){
+  var ov=PLANET_TERRAIN_COLORS[planetType];
+  return (ov&&ov[tileType])||(TERRAIN[tileType]||TERRAIN.plains);
+}
+var SELL_RATES={metals:2,crystals:4,tech:5,fuel:1};
+var UPGRADES={
+  shields:     [{cost:{crystals:20},desc:"Shield cap +25"},{cost:{crystals:35,tech:10},desc:"Shield cap +50"}],
+  weapons:     [{cost:{metals:20,tech:5},desc:"Weapon dmg +10"},{cost:{metals:35,tech:15},desc:"Weapon dmg +20"}],
+  engines:     [{cost:{metals:15,fuel:10},desc:"Travel range +1"},{cost:{metals:25,fuel:20},desc:"Travel range +2"}],
+  sensors:     [{cost:{tech:30,crystals:15},desc:"Full terrain mapping"},{cost:{tech:50,crystals:25},desc:"Resource detection from orbit"}],
+  reactor:     [{cost:{tech:15,crystals:15},desc:"Power pool +2"},{cost:{tech:25,crystals:25},desc:"Power pool +3"}],
+  hull:        [{cost:{metals:30},desc:"Repair +40 hull"},{cost:{metals:50,crystals:10},desc:"+25 max hull & repair"}],
+  roverChassis:[{cost:{metals:40,tech:15},desc:"Traverse mountains & ice"},{cost:{metals:70,tech:30},desc:"Traverse ocean & lava"}],
+  roverSensor: [{cost:{tech:25,crystals:10},desc:"Surface reveal +1 radius"},{cost:{tech:40,crystals:20},desc:"Surface reveal +2 radius"}],
+  roverLaser:  [{cost:{tech:20,metals:15},desc:"Laser shots +3"},{cost:{tech:35,metals:25},desc:"Laser shots +5"}],
+  roverCargo:  [{cost:{metals:20,tech:10},desc:"Rover cargo +20 units"},{cost:{metals:35,tech:20},desc:"Rover cargo +30 units"}],
+  podCap:      [{cost:{credits:600,tech:40},desc:"Double pod capacity (100→200 per pod)"}],
+};
+
+var C={
+  bg:"#07071a",panel:"rgba(255,255,255,0.04)",border:"rgba(180,180,255,0.1)",
+  cyan:"#00ffcc",purple:"#9955ff",blue:"#4488ff",red:"#ff4466",
+  yellow:"#ffcc44",green:"#44ff88",orange:"#ff8844",text:"#dde0ff",dim:"#8899cc",
+  fuel:"#ff9933",
+};
+function bs(color,active){
+  return {background:active?color+"18":"rgba(255,255,255,0.04)",border:"1px solid "+(active?color+"55":"rgba(255,255,255,0.08)"),color:active?color:C.dim,borderRadius:"10px",padding:isTablet?"18px 20px":"10px 16px",cursor:active?"pointer":"not-allowed",fontSize:px(13),fontFamily:"'Trebuchet MS',sans-serif",fontWeight:"600",letterSpacing:"0.5px",transition:"all 0.15s",boxShadow:active?"0 0 10px "+color+"22":"none"};
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function roverCargoUsed(rover){var c=rover.cargo;return (c.metals||0)+(c.crystals||0)+(c.fuel||0)+(c.tech||0);}
+function shipCargoUsed(player){return (player.resources.metals||0)+(player.resources.crystals||0)+(player.resources.tech||0);}
+function roverMaxEnergy(cl){return cl===0?100:cl===1?130:cl===2?160:200;}
+function shipCargoMax(player){var podCap=(player.upgrades&&player.upgrades.podCap>=1)?200:100;return (player.cargoPods||4)*podCap;}
+
+var PLANET_COLORS={
+  "Rocky":    {h:22, s:35,l:38,hv:12},
+  "Gas Giant":{h:32, s:85,l:52,hv:25},
+  "Ice World":{h:198,s:65,l:72,hv:12},
+  "Volcanic": {h:10, s:88,l:30,hv:8},
+  "Ocean":    {h:212,s:78,l:36,hv:15},
+  "Desert":   {h:50, s:88,l:56,hv:10},
+  "Jungle":   {h:122,s:62,l:26,hv:15},
+  "Barren":   {h:18, s:18,l:28,hv:10},
+  "Crystalline":{h:270,s:75,l:45,hv:20},
+  "Fungal":   {h:310,s:65,l:38,hv:20},
+  "Toxic":    {h:82, s:80,l:35,hv:12},
+  "Frozen Gas Giant":{h:210,s:45,l:58,hv:15},
+};
+function makePlanetColor(type,rng){var pc=PLANET_COLORS[type]||{h:200,s:50,l:40,hv:20};return "hsl("+(pc.h+Math.floor(rng()*pc.hv*2)-pc.hv)+","+pc.s+"%,"+pc.l+"%)";}
+
+var TERRAIN_RES={
+  plains:  ["fuel","tech","fuel","tech","metals"],
+  forest:  ["fuel","fuel","fuel","tech","tech"],
+  desert:  ["metals","metals","crystals","tech"],
+  rocky:   ["metals","metals","metals","crystals"],
+  mountain:["metals","metals","crystals","crystals","tech"],
+  ocean:   ["crystals","crystals","fuel","fuel","crystals"],
+  ice:     ["crystals","crystals","fuel","crystals"],
+  lava:    ["metals","metals","crystals","metals"],
+};
+
+function seededRand(seed){var s=seed+1;return function(){s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+
+function generateSurface(systemId,planetId,planetType){
+  var rand=seededRand(systemId*100+planetId*7);
+  var W=20,H=20,lx=10,ly=10;
+  var primaryType=PRIMARY_TERRAIN[planetType]||"plains";
+  var grid=[];
+  for(var y=0;y<H;y++){var row=[];for(var x=0;x<W;x++)row.push({type:primaryType,resource:null,resourceAmt:0,ruin:false,ruinLooted:false,creature:false,creatureType:null,revealed:false});grid.push(row);}
+  var pool=TERRAIN_POOLS[planetType]||["plains","rocky","desert"];
+  for(var w=0;w<8+Math.floor(rand()*6);w++){
+    var ttype=pool[Math.floor(rand()*pool.length)];
+    var cx=Math.floor(rand()*W),cy=Math.floor(rand()*H);
+    for(var st=0;st<15+Math.floor(rand()*35);st++){
+      if(cx>=0&&cx<W&&cy>=0&&cy<H)grid[cy][cx].type=ttype;
+      if(rand()<0.2){cx=Math.floor(rand()*W);cy=Math.floor(rand()*H);}
+      else{var dirs=[[0,1],[0,-1],[1,0],[-1,0]];var d=dirs[Math.floor(rand()*4)];cx=Math.max(0,Math.min(W-1,cx+d[0]));cy=Math.max(0,Math.min(H-1,cy+d[1]));}
+    }
+  }
+  // Clear landing zone to a small 3x3 area of passable terrain (themed per planet)
+  var landingType=LANDING_TERRAIN[planetType]||"plains";
+  for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){var nx=lx+dx,ny=ly+dy;if(nx>=0&&nx<W&&ny>=0&&ny<H)grid[ny][nx].type=landingType;}
+  for(var i=0;i<20+Math.floor(rand()*16);i++){
+    var rx=Math.floor(rand()*W),ry=Math.floor(rand()*H);
+    if(!grid[ry][rx].resource&&!grid[ry][rx].ruin){
+      var tRes=TERRAIN_RES[grid[ry][rx].type]||["metals","crystals","fuel","tech"];
+      grid[ry][rx].resource=tRes[Math.floor(rand()*tRes.length)];
+      grid[ry][rx].resourceAmt=5+Math.floor(rand()*20);
+    }
+  }
+  for(var ri=0;ri<Math.floor(rand()*4);ri++){for(var att=0;att<30;att++){var rrx=Math.floor(rand()*W),rry=Math.floor(rand()*H);if(!grid[rry][rrx].ruin&&!grid[rry][rrx].resource&&(Math.abs(rrx-lx)>3||Math.abs(rry-ly)>3)){grid[rry][rrx].ruin=true;break;}}}
+  for(var ci=0;ci<3+Math.floor(rand()*6);ci++){for(var ca=0;ca<30;ca++){var crx=Math.floor(rand()*W),cry=Math.floor(rand()*H);if(!grid[cry][crx].creature&&!grid[cry][crx].ruin&&(Math.abs(crx-lx)>2||Math.abs(cry-ly)>2)){var r2=rand();var ct2=r2<0.33?"passive":r2<0.66?"normal":"aggressive";var chp=ct2==="aggressive"?(rand()<0.5?2:3):1;grid[cry][crx].creature=true;grid[cry][crx].creatureType=ct2;grid[cry][crx].creatureHp=chp;break;}}}
+  return grid;
+}
+
+function revealAround(grid,cx,cy,radius){
+  var ng=grid.map(function(row){return row.map(function(t){return Object.assign({},t);});});
+  for(var y=0;y<20;y++)for(var x=0;x<20;x++){if(Math.sqrt((x-cx)*(x-cx)+(y-cy)*(y-cy))<=radius)ng[y][x].revealed=true;}
+  return ng;
+}
+
+function roverMaxHull(cl){return cl===0?60:cl===1?80:cl===2?100:130;}
+function generateGalaxy(){
+  var systems=[];
+  var namePool=NAMES.slice().sort(function(){return Math.random()-0.5;});
+  var nameIdx=0;
+  var ROMAN=["I","II","III","IV","V"];
+  var startX=3,startY=2; // center of 7x5 grid
+
+  for(var cy=0;cy<GH;cy++){
+    for(var cx=0;cx<GW;cx++){
+      var id=systems.length;
+      var isStart=(cx===startX&&cy===startY);
+      var adjToStart=!isStart&&Math.abs(cx-startX)<=1&&Math.abs(cy-startY)<=1;
+      var isBlackHole=!isStart&&!adjToStart&&Math.random()<0.22;
+
+      if(isBlackHole){
+        systems.push({id:id,x:cx,y:cy,blackhole:true,revealed:false,name:"",explored:false,hasStarbase:false,planets:[],enemies:[],artifactFragment:false,artifactCollected:false,starColor:"#444"});
+      } else {
+        var sysName=namePool[nameIdx++]||("Sys-"+id);
+        var ec=isStart?0:Math.floor(Math.random()*3);
+        var cRand=seededRand(id*13+7);
+        var pc=2+Math.floor(Math.random()*4);
+        var planets=[];
+        for(var pi=0;pi<pc;pi++){
+          var ptype=PLANET_TYPES[Math.floor(Math.random()*PLANET_TYPES.length)];
+          var isAnom=cRand()<0.12;
+          var normalColor=makePlanetColor(ptype,cRand);
+          var anomR=cRand();
+          var baseHue=(PLANET_COLORS[ptype]||{h:200}).h;
+          var anomHue=((baseHue+(anomR>0.5?130:-130))+360)%360;
+          var pcolor=isAnom?("hsl("+anomHue+",82%,55%)"):normalColor;
+          planets.push({id:pi,name:sysName+" "+ROMAN[pi],type:ptype,color:pcolor,anomaly:isAnom,scanned:false,surfaceStats:null,savedSurface:null});
+        }
+        var enemies=[];
+        for(var ei=0;ei<ec;ei++){var et=ENEMY_TYPES[Math.floor(Math.random()*ENEMY_TYPES.length)];enemies.push(Object.assign({},et,{hull:et.maxHull,shields:et.maxShields,uid:Math.random()}));}
+        systems.push({id:id,x:cx,y:cy,blackhole:false,revealed:isStart,name:sysName,starColor:STAR_COLORS[Math.floor(Math.random()*STAR_COLORS.length)],explored:isStart,hasStarbase:isStart,planets:planets,enemies:enemies,artifactFragment:false,artifactCollected:false});
+      }
+    }
+  }
+
+  // Starbases: ~33% of regular non-start systems, at least one adjacent to start
+  var regularOther=systems.filter(function(s){return !s.blackhole&&!s.explored;});
+  regularOther.sort(function(){return Math.random()-0.5;}).slice(0,Math.floor(regularOther.length*0.33)).forEach(function(s){s.hasStarbase=true;});
+  var adjRegular=regularOther.filter(function(s){return Math.abs(s.x-startX)<=1&&Math.abs(s.y-startY)<=1;});
+  if(adjRegular.length>0&&!adjRegular.some(function(s){return s.hasStarbase;}))adjRegular[0].hasStarbase=true;
+
+  // Guarantee starting system always has a starbase
+  var startSysRef=systems.find(function(s){return s.explored&&!s.blackhole;});
+  if(startSysRef)startSysRef.hasStarbase=true;
+  regularOther.sort(function(){return Math.random()-0.5;}).slice(0,6).forEach(function(s){s.artifactFragment=true;});
+  return systems;
+}
+
+function isReachable(systems,fromId,toId,range){
+  var a=systems.find(function(s){return s.id===fromId;}),b=systems.find(function(s){return s.id===toId;});
+  if(!a||!b||a.id===b.id||b.blackhole)return false;
+  return Math.abs(a.x-b.x)<=range&&Math.abs(a.y-b.y)<=range;
+}
+
+function makeState(){
+  var systems=generateGalaxy();
+  var startSys=systems.find(function(s){return s.explored;});
+  var startId=startSys?startSys.id:0;
+  return {
+    view:"galaxy",systems:systems,currentSystemId:startId,lastStarbaseId:startId,
+    player:{hull:100,maxHull:100,shields:50,maxShields:50,weaponDmg:18,engineRange:1,sensorRange:1,reactorMax:10,power:{shields:3,weapons:4,engines:3},resources:{metals:25,crystals:10,fuel:50,tech:5},credits:300,artifacts:0,cargoPods:4,shipType:"small",upgrades:{shields:0,weapons:0,engines:0,sensors:0,reactor:0,hull:0,roverChassis:0,roverSensor:0,roverLaser:0,roverCargo:0,podCap:0}},
+    rover:{chassisLevel:0,sensorRadius:2,laserShots:3,maxLaserShots:3,cargoMax:50,cargo:{metals:0,crystals:0,fuel:0,tech:0},hull:60,maxHull:60,energy:100,maxEnergy:100,destroyed:false},
+    combat:null,surface:null,orbitSystemId:null,orbitPlanetId:null,surfaceLog:[],
+    log:["Void Atlas initialized. Hunt the 6 artifact fragments."],
+  };
+}
+
+// ─── MINI COMPONENTS ────────────────────────────────────────
+function StatBar(props){
+  var pct=Math.max(0,Math.min(100,(props.val/Math.max(1,props.max))*100));
+  return(
+    <div style={{fontSize:px(12)}}>
+      <div style={{color:C.dim,letterSpacing:"1px",marginBottom:"3px"}}>{props.label} <span style={{color:props.color}}>{props.val}</span></div>
+      <div style={{background:"rgba(0,0,0,0.4)",borderRadius:"3px",height:"5px",border:"1px solid "+props.color+"22"}}>
+        <div style={{width:pct+"%",height:"100%",borderRadius:"3px",background:"linear-gradient(90deg,"+props.color+"88,"+props.color+")",transition:"width 0.3s"}}/>
+      </div>
+    </div>
+  );
+}
+function MiniBar(props){
+  var pct=props.total>0?Math.round((props.val/props.total)*100):0;
+  var barColor=pct===100?C.green:props.color;
+  return(
+    <div style={{marginBottom:"4px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:px(13),color:C.dim,marginBottom:"2px"}}>
+        <span>{props.label}</span>
+        <span style={{color:pct===100?C.green:C.text}}>{props.val}/{props.total} <span style={{color:barColor}}>({pct}%)</span></span>
+      </div>
+      <div style={{height:"4px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}>
+        <div style={{width:pct+"%",height:"100%",background:barColor,borderRadius:"2px",transition:"width 0.3s"}}/>
+      </div>
+    </div>
+  );
+}
+
+function Header(props){
+  var player=props.player,onRestart=props.onRestart,saveStatus=props.saveStatus;
+  var usedCargo=shipCargoUsed(player),maxCargo=shipCargoMax(player);
+  var cargoPct=maxCargo>0?Math.round((usedCargo/maxCargo)*100):0;
+  var cargoColor=cargoPct>90?C.red:cargoPct>70?C.yellow:C.cyan;
+  var hullPct=Math.round((player.hull/Math.max(1,player.maxHull))*100);
+  var shldPct=Math.round((player.shields/Math.max(1,player.maxShields))*100);
+  var hullColor=hullPct<30?C.red:hullPct<60?C.yellow:C.green;
+  var shldColor=shldPct<30?C.red:shldPct<60?C.yellow:C.blue;
+  var saveCol=saveStatus==="ok"?C.green:saveStatus==="err"?C.red:C.dim;
+  var dots=[];
+  for(var i=0;i<6;i++)dots.push(<div key={i} style={{width:"11px",height:"11px",borderRadius:"2px",background:i<player.artifacts?"linear-gradient(135deg,#9955ff,#4488ff)":"rgba(255,255,255,0.1)",flexShrink:0}}/>);
+  return(
+    <div style={{paddingTop:"calc(8px + env(safe-area-inset-top))",paddingLeft:PAD+"px",paddingRight:PAD+"px",paddingBottom:"8px",borderBottom:"1px solid "+C.border,background:"rgba(0,0,0,0.5)"}}>
+
+      {/* Row 1: Title + save + restart */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <span style={{fontSize:px(15),fontWeight:"700",letterSpacing:"3px",color:"#fff"}}>VOID ATLAS</span>
+        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style={{fontSize:px(11),color:saveCol}}>💾</span>
+          <button onClick={onRestart} style={{background:"rgba(255,68,102,0.12)",border:"1px solid rgba(255,68,102,0.3)",color:"rgba(255,110,140,0.9)",borderRadius:"6px",padding:isTablet?"5px 14px":"3px 10px",fontSize:px(13),cursor:"pointer"}}>↺ New</button>
+        </div>
+      </div>
+
+      {/* SHIP frame: hull/shields/fuel/credits + cargo + artifacts */}
+      <div style={{border:"1px solid rgba(180,180,255,0.4)",borderRadius:"10px",overflow:"hidden",marginBottom:"8px"}}>
+        <div style={{background:"rgba(180,180,255,0.08)",borderBottom:"1px solid rgba(180,180,255,0.2)",padding:"2px 10px",fontSize:px(9),color:"rgba(180,180,255,0.7)",letterSpacing:"2px"}}>SHIP</div>
+        <div style={{padding:"7px 10px 8px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"8px",marginBottom:"7px"}}>
+            <div>
+              <div style={{fontSize:px(10),color:C.dim,letterSpacing:"1px",marginBottom:"2px"}}>HULL</div>
+              <div style={{fontSize:px(16),fontWeight:"700",color:hullColor,lineHeight:1}}>{Math.round(player.hull)}</div>
+              <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px",marginTop:"3px"}}><div style={{width:hullPct+"%",height:"100%",background:hullColor,borderRadius:"2px"}}/></div>
+            </div>
+            <div>
+              <div style={{fontSize:px(10),color:C.dim,letterSpacing:"1px",marginBottom:"2px"}}>SHIELDS</div>
+              <div style={{fontSize:px(16),fontWeight:"700",color:shldColor,lineHeight:1}}>{Math.round(player.shields)}</div>
+              <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px",marginTop:"3px"}}><div style={{width:shldPct+"%",height:"100%",background:shldColor,borderRadius:"2px"}}/></div>
+            </div>
+            <div>
+              <div style={{fontSize:px(10),color:C.fuel,letterSpacing:"1px",marginBottom:"2px"}}>FUEL</div>
+              <div style={{fontSize:px(16),fontWeight:"700",color:C.fuel,lineHeight:1}}>{player.resources.fuel}</div>
+            </div>
+            <div>
+              <div style={{fontSize:px(10),color:C.yellow,letterSpacing:"1px",marginBottom:"2px"}}>⌬</div>
+              <div style={{fontSize:px(16),fontWeight:"700",color:C.yellow,lineHeight:1}}>{player.credits}</div>
+            </div>
+          </div>
+          {/* Cargo bar + artifact dots */}
+          <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+            <span style={{fontSize:px(10),color:C.dim,flexShrink:0}}>CARGO</span>
+            <div style={{width:isTablet?"130px":"90px",height:"4px",background:"rgba(255,255,255,0.08)",borderRadius:"2px",flexShrink:0}}>
+              <div style={{width:cargoPct+"%",height:"100%",background:cargoColor,borderRadius:"2px",transition:"width 0.3s"}}/>
+            </div>
+            <span style={{fontSize:px(10),color:cargoColor,marginRight:"auto",flexShrink:0}}>{usedCargo}/{maxCargo}</span>
+            <span style={{fontSize:px(10),color:C.dim,flexShrink:0,marginRight:"4px"}}>ARTIFACTS</span>
+            <div style={{display:"flex",gap:"3px"}}>{dots}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── GALAXY MAP ──────────────────────────────────────────────
+function GalaxyView(props){
+  var systems=props.systems,currentId=props.currentId,player=props.player,onTap=props.onTap;
+  var cur=systems.find(function(s){return s.id===currentId;});
+  if(!cur)return null;
+
+  var GCH=isTablet?Math.min(Math.floor((window.innerWidth-PAD*2-(GW-1)*5)/GW),Math.floor((window.innerHeight*0.68-80)/GH))+"px":"44px";
+  var cells=[];
+  for(var gy=0;gy<GH;gy++){
+    for(var gx=0;gx<GW;gx++){
+      var sys=systems.find(function(s){return s.x===gx&&s.y===gy;});
+      var key=gx+"-"+gy;
+      var isCurrent=sys&&sys.id===currentId;
+      var isAdjacent=sys&&!isCurrent&&Math.abs(gx-cur.x)<=player.engineRange&&Math.abs(gy-cur.y)<=player.engineRange;
+
+      // Current system
+      if(isCurrent){
+        (function(sc){cells.push(
+          <div key={key} onClick={function(){onTap(sc.id);}} style={{height:GCH,borderRadius:"7px",cursor:"pointer",background:"radial-gradient(circle at 40% 40%,"+sc.starColor+"44,rgba(255,255,255,0.05))",border:"2px solid "+sc.starColor+"cc",boxShadow:"0 0 16px "+sc.starColor+"55",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",gap:"1px"}}>
+            <div style={{fontSize:px(12),color:sc.starColor}}>✦</div>
+            <div style={{fontSize:px(7),color:C.cyan,fontWeight:"700",letterSpacing:"0.5px"}}>YOU</div>
+            {sc.hasStarbase&&<div style={{position:"absolute",top:"2px",left:"3px",fontSize:px(9),color:C.purple}}>⬡</div>}
+            {sc.artifactFragment&&!sc.artifactCollected&&<div style={{position:"absolute",top:"1px",left:"2px",fontSize:px(7),color:C.purple}}>◆</div>}
+          </div>
+        );})(sys);
+        continue;
+      }
+
+      // Revealed black hole
+      if(sys&&sys.blackhole&&sys.revealed){
+        cells.push(
+          <div key={key} style={{height:GCH,borderRadius:"7px",background:"#000",border:"1px solid #111",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="40" height="36" viewBox="0 0 40 36">
+              <ellipse cx="20" cy="18" rx="17" ry="6" fill="none" stroke="#ff8800" strokeWidth="2" opacity="0.35"/>
+              <ellipse cx="20" cy="18" rx="13" ry="4.5" fill="none" stroke="#ffaa22" strokeWidth="1.5" opacity="0.2"/>
+              <circle cx="20" cy="18" r="8" fill="#000"/>
+              <circle cx="20" cy="18" r="8" fill="none" stroke="#1a1a1a" strokeWidth="1"/>
+            </svg>
+          </div>
+        );
+        continue;
+      }
+
+      // Explored system (revealed + visited)
+      if(sys&&sys.explored&&!sys.blackhole){
+        (function(sc,adj){cells.push(
+          <div key={key} onClick={adj?function(){onTap(sc.id);}:null} style={{height:GCH,borderRadius:"7px",cursor:adj?"pointer":"default",background:"radial-gradient(circle at 40% 40%,"+sc.starColor+"22,rgba(255,255,255,0.02))",border:adj?"1px solid "+sc.starColor+"bb":"1px solid "+sc.starColor+"44",boxShadow:adj?"0 0 8px "+sc.starColor+"44, inset 0 0 6px "+sc.starColor+"11":"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",gap:"1px"}}>
+            <div style={{fontSize:px(11),color:sc.starColor}}>✦</div>
+            <div style={{fontSize:px(6),color:sc.starColor,fontWeight:"600",opacity:0.85}}>{sc.name}</div>
+            {sc.hasStarbase&&<div style={{position:"absolute",top:"2px",left:"3px",fontSize:px(9),color:C.purple}}>⬡</div>}
+            {sc.artifactFragment&&!sc.artifactCollected&&<div style={{position:"absolute",top:"1px",left:"2px",fontSize:px(7),color:C.purple}}>◆</div>}
+            {sc.enemies&&sc.enemies.length>0&&<div style={{position:"absolute",bottom:"1px",right:"2px",fontSize:px(6),color:C.red}}>⚠</div>}
+          </div>
+        );})(sys,isAdjacent);
+        continue;
+      }
+
+      // Debris field (unrevealed) — tappable if adjacent, same look either way
+      (function(sc,adj,cgx,cgy){
+        var dcx=sc?sc.x:cgx,dcy=sc?sc.y:cgy;
+        var dustCols2=["rgba(90,110,255,0.2)","rgba(140,70,220,0.18)","rgba(70,160,255,0.16)","rgba(200,90,140,0.15)","rgba(80,200,180,0.15)"];
+        var dc2=dustCols2[(dcx*3+dcy*5)%dustCols2.length];
+        var ex2=8+((dcx*23+dcy*7)%20),ey2=3+((dcx*11+dcy*17)%22);
+        var dots5=[];
+        for(var di=0;di<6;di++){dots5.push({x:1+((dcx*17+dcy*7+di*11)%40),y:1+((dcx*7+dcy*19+di*13)%38),r:((dcx+dcy+di*3)%3)*0.3+0.25});}
+        cells.push(
+          <div key={key} onClick={adj&&sc?function(){onTap(sc.id);}:null}
+            style={{height:GCH,borderRadius:"7px",cursor:adj&&sc?"pointer":"default",overflow:"hidden",
+              border:adj&&sc?"1px solid rgba(120,160,255,0.6)":"1px solid rgba(60,70,120,0.25)",
+              boxShadow:adj&&sc?"0 0 7px rgba(100,140,255,0.35), inset 0 0 8px rgba(100,140,255,0.06)":"none",
+              background:"#010108",position:"relative"}}>
+            <svg width="100%" height="100%" viewBox="0 0 44 44" style={{position:"absolute",top:0,left:0}}>
+              <ellipse cx={ex2} cy={ey2} rx={12+((dcx+dcy*3)%10)} ry={7+((dcx*2+dcy)%8)} fill={dc2}/>
+              {dots5.map(function(d,i){return <circle key={i} cx={d.x} cy={d.y} r={d.r} fill="rgba(200,215,255,0.4)"/>;} )}
+            </svg>
+          </div>
+        );
+      })(sys,isAdjacent,gx,gy);
+    }
+  }
+
+  return(
+    <div>
+      <div style={{textAlign:"center",marginBottom:"8px",fontSize:px(13),letterSpacing:"3px",color:C.dim}}>GALAXY MAP</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+GW+",1fr)",gap:isTablet?"5px":"3px",marginBottom:"10px"}}>{cells}</div>
+      <div style={{fontSize:px(12),color:C.dim,textAlign:"center",lineHeight:"1.8"}}>
+        Tap ✦ to enter • Tap ? to explore (5 fuel) • ◆ artifact • ⚠ hostile
+      </div>
+    </div>
+  );
+}
+
+// ─── SOLAR SYSTEM ────────────────────────────────────────────
+function SolarSystemView(props){
+  var system=props.system,onGalaxy=props.onGalaxy,onOrbitPlanet=props.onOrbitPlanet,onStarbase=props.onStarbase;
+  if(!system)return null;
+  var PSIZES={"Gas Giant":15,"Ocean":13,"Jungle":13,"Frozen Gas Giant":14,"Volcanic":12,"Ice World":12,"Fungal":12,"Desert":10,"Rocky":9,"Crystalline":11,"Toxic":11,"Barren":8};
+  var CX=150,CY=155,ORBIT_R=[48,75,100,122,141];
+
+  // Compute starbase position first so label placement can avoid it
+  var sbAngle=Math.PI*1.25;
+  var sbR=system.hasStarbase?Math.min(ORBIT_R[Math.min(system.planets.length,ORBIT_R.length-1)]+14,143):null;
+  var sbX=sbR?CX+sbR*Math.cos(sbAngle):null,sbY=sbR?CY+sbR*Math.sin(sbAngle):null;
+  var SB_CLEAR=36; // clearance radius around starbase center
+
+  var planetData=system.planets.map(function(p,i){
+    var r=ORBIT_R[Math.min(i,ORBIT_R.length-1)];
+    var angle=(i/system.planets.length)*Math.PI*2+0.9;
+    var px=CX+r*Math.cos(angle),py=CY+r*Math.sin(angle);
+    var ps=PSIZES[p.type]||10;
+    var dx=px-CX,dy=py-CY,dist=Math.sqrt(dx*dx+dy*dy)||1;
+    var ux=dx/dist,uy=dy/dist;
+    var labelOffset=ps+22;
+
+    function clampLabel(lx2,ly2,anch){
+      var cx2=anch==="start"?Math.max(4,Math.min(200,lx2)):anch==="end"?Math.max(90,Math.min(296,lx2)):Math.max(60,Math.min(240,lx2));
+      var cy2=Math.max(10,Math.min(318,ly2));
+      return {lx:cx2,ly:cy2,anchor:anch};
+    }
+    function clearsSB(lx2,ly2){
+      if(!sbX)return true;
+      var ddx=lx2-sbX,ddy=ly2-sbY;
+      return Math.sqrt(ddx*ddx+ddy*ddy)>=SB_CLEAR;
+    }
+
+    // Try primary direction, then ±90° rotations, then shift up as last resort
+    var candidates=[
+      [px+ux*labelOffset,  py+uy*labelOffset+3.5,  ux>0.3?"start":ux<-0.3?"end":"middle"],
+      [px+(-uy)*labelOffset,py+ux*labelOffset+3.5,  (-uy)>0.3?"start":(-uy)<-0.3?"end":"middle"],
+      [px+uy*labelOffset,  py+(-ux)*labelOffset+3.5,uy>0.3?"start":uy<-0.3?"end":"middle"],
+      [px+ux*labelOffset,  py+uy*labelOffset-18,    ux>0.3?"start":ux<-0.3?"end":"middle"],
+    ];
+    var chosen=null;
+    for(var ci=0;ci<candidates.length;ci++){
+      var c=candidates[ci];
+      if(clearsSB(c[0],c[1])){chosen=clampLabel(c[0],c[1],c[2]);break;}
+    }
+    if(!chosen)chosen=clampLabel(candidates[0][0],candidates[0][1],candidates[0][2]);
+
+    return Object.assign({},p,{r:ps,orbitR:r,px:px,py:py,lx:chosen.lx,ly:chosen.ly,anchor:chosen.anchor});
+  });
+  var allRings=[],seenR={};planetData.forEach(function(p){if(!seenR[p.orbitR]){seenR[p.orbitR]=true;allRings.push(p.orbitR);}});
+  if(sbR&&!seenR[sbR])allRings.push(sbR);
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div><div style={{fontSize:px(18),fontWeight:"700",color:system.starColor}}>{system.name}</div><div style={{fontSize:px(13),color:C.dim}}>{system.planets.length} planets{system.enemies.length>0?<span style={{color:C.red}}> • ⚠ {system.enemies.length} hostile{system.enemies.length>1?"s":""}</span>:""}{system.artifactFragment&&!system.artifactCollected?<span style={{color:C.purple}}> • ◆ artifact</span>:""}</div></div>
+        <button onClick={onGalaxy} style={bs(C.cyan,true)}>↩ Galaxy</button>
+      </div>
+      <svg width="100%" viewBox="0 0 300 325" style={{display:"block",marginBottom:"6px",maxWidth:isTablet?"560px":"100%",marginLeft:"auto",marginRight:"auto"}}>
+        {allRings.map(function(r){return <circle key={r} cx={CX} cy={CY} r={r} fill="none" stroke="rgba(160,130,255,0.45)" strokeWidth="1.5"/>;})}
+        <circle cx={CX} cy={CY} r="28" fill={system.starColor} opacity="0.12"/>
+        <circle cx={CX} cy={CY} r="16" fill={system.starColor}/>
+        <circle cx={CX-5} cy={CY-5} r="6" fill="white" opacity="0.3"/>
+        <text x={CX} y={CY+5} textAnchor="middle" dominantBaseline="middle" fill="rgba(0,0,0,0.6)" fontSize="7" fontWeight="700">{system.name}</text>
+        {planetData.map(function(p){return(
+          <g key={p.id} onClick={function(){onOrbitPlanet(p.id);}} style={{cursor:"pointer"}}>
+            <circle cx={p.px} cy={p.py} r={p.r+9} fill="transparent"/>
+            <circle cx={p.px} cy={p.py} r={p.r} fill={p.color} stroke="rgba(255,255,255,0.25)" strokeWidth="0.8"/>
+            <circle cx={p.px-p.r*0.3} cy={p.py-p.r*0.35} r={p.r*0.38} fill="white" opacity="0.18"/>
+            {p.scanned&&<circle cx={p.px+p.r*0.7} cy={p.py-p.r*0.7} r="2.5" fill={C.cyan}/>}
+            {p.surfaceStats&&p.surfaceStats.collectedRes===p.surfaceStats.totalRes&&p.surfaceStats.totalRes>0&&<circle cx={p.px-p.r*0.7} cy={p.py-p.r*0.7} r="2.5" fill={C.green}/>}
+            <text x={p.lx} y={p.ly} textAnchor={p.anchor} fill={p.color} fontSize="10" fontWeight="700" opacity="0.95" stroke="#07071a" strokeWidth="2.5" paintOrder="stroke">{p.name}</text>
+          </g>
+        );})}
+        {sbR&&sbX!=null&&(
+        <g onClick={onStarbase} style={{cursor:"pointer"}}>
+          <rect x={sbX-24} y={sbY-20} width="48" height="42" fill="transparent"/>
+          <circle cx={sbX} cy={sbY} r="13" fill="none" stroke={C.purple} strokeWidth="0.6" opacity="0.3"/>
+          <rect x={sbX-18} y={sbY-1.8} width="36" height="3.6" fill="#0c0828" stroke={C.purple} strokeWidth="0.7" opacity="0.9"/>
+          <rect x={sbX-1.8} y={sbY-16} width="3.6" height="14" fill="#0c0828" stroke={C.blue} strokeWidth="0.6" opacity="0.9"/>
+          <rect x={sbX-24} y={sbY-6} width="7" height="12" fill="#0a1428" stroke={C.blue} strokeWidth="0.7"/>
+          <line x1={sbX-20} y1={sbY-6} x2={sbX-20} y2={sbY+6} stroke={C.blue} strokeWidth="0.6" opacity="0.5"/>
+          <rect x={sbX+17} y={sbY-6} width="7" height="12" fill="#0a1428" stroke={C.blue} strokeWidth="0.7"/>
+          <line x1={sbX+21} y1={sbY-6} x2={sbX+21} y2={sbY+6} stroke={C.blue} strokeWidth="0.6" opacity="0.5"/>
+          <circle cx={sbX-23} cy={sbY} r="2" fill={C.blue} opacity="0.9"/>
+          <circle cx={sbX+23} cy={sbY} r="2" fill={C.blue} opacity="0.9"/>
+          <circle cx={sbX} cy={sbY-16} r="1.5" fill={C.red} opacity="0.8"/>
+          <circle cx={sbX} cy={sbY} r="7" fill="#140830" stroke={C.purple} strokeWidth="1.4"/>
+          <circle cx={sbX} cy={sbY} r="3.5" fill={C.purple} opacity="0.85"/>
+          <rect x={sbX-22} y={sbY+18} width="44" height="12" rx="2" fill="#07071a" opacity="0.75"/>
+          <text x={sbX} y={sbY+26} textAnchor="middle" fill={C.purple} fontSize="8" letterSpacing="0.5" opacity="0.9">STARBASE</text>
+        </g>
+        )}
+      </svg>
+      <div style={{textAlign:"center",fontSize:px(13),color:C.dim}}>Tap a planet to orbit{system.hasStarbase?" • Tap starbase to dock":""}</div>
+    </div>
+  );
+}
+
+// ─── PLANET SVG ──────────────────────────────────────────────
+function PlanetSVG(props){
+  var planet=props.planet,systemId=props.systemId;
+  var rand=seededRand(systemId*17+(planet.id||0)*31+99);
+  var type=planet.type;
+  var uid="plt"+systemId+"x"+(planet.id||0);
+  var PCONF={
+    "Ocean":    {base:"#0d3a7a",land:"#2a6030",cloud:true, atm:"#4a8aff"},
+    "Volcanic": {base:"#1e0600",dark:"#0a0200",lava:"#dd3300",glow:"#ff6600",atm:"#cc3300"},
+    "Ice World":{base:"#4a9ec0",dark:"#2a7090",ice:"#e8f4ff",atm:"#aaddff"},
+    "Desert":   {base:"#d4b420",dark:"#a08820",dune:"#e0cc30",atm:"#f0e050"},
+    "Jungle":   {base:"#1a4220",patch:"#2a6034",water:"#1a5a8a",atm:"#44aa44"},
+    "Rocky":    {base:"#6a5848",dark:"#3e2e22",atm:null},
+    "Gas Giant":{base:"#c86020",band1:"#e08040",band2:"#f0a060",dark:"#9a4010",storm:"#ff8800",atm:"#ffaa44"},
+    "Barren":   {base:"#484038",dark:"#28201c",atm:null},
+    "Crystalline":{base:"#2a1060",crystal:"#cc88ff",shine:"#ffaaff",dark:"#180840",atm:"#9955ff"},
+    "Fungal":   {base:"#4a1040",spot:"#dd44aa",spore:"#ff88ee",dark:"#300830",atm:"#cc44bb"},
+    "Toxic":    {base:"#0e2604",acid:"#4aaa10",bubble:"#88ee22",dark:"#061202",atm:"#55cc15"},
+    "Frozen Gas Giant":{base:"#1a3a6e",band1:"#2a5aaa",band2:"#3a6acc",dark:"#0e2448",ice:"#aaddff",atm:"#88bbff"},
+  };
+  var c=PCONF[type]||{base:planet.color,dark:"#333",atm:null};
+  var f=[];
+  function ri(min,max){return min+Math.floor(rand()*(max-min));}
+  function rf(min,max){return min+rand()*(max-min);}
+  var hasRing=type==="Gas Giant"||type==="Ice World"||type==="Frozen Gas Giant";
+  var ringColor=type==="Gas Giant"?"#e8c880":type==="Ice World"?"#ccecff":"#ddeeff";
+
+  if(type==="Gas Giant"){
+    var bYs=[-36,-24,-12,0,11,23,35],bCs=[c.band1,c.band2,c.dark,c.band1,c.band2,c.dark,c.band1];
+    for(var i=0;i<bYs.length;i++)f.push(<rect key={"b"+i} x="6" y={50+bYs[i]} width="88" height={ri(11,17)} fill={bCs[i%bCs.length]} opacity="0.65"/>);
+    var sx=ri(20,55),sy=ri(42,58);
+    f.push(<ellipse key="s1" cx={sx} cy={sy} rx={ri(10,16)} ry={ri(5,8)} fill={c.storm} opacity="0.85"/>);
+    f.push(<ellipse key="s2" cx={sx} cy={sy} rx={ri(6,10)} ry={ri(3,5)} fill="#ffcc00" opacity="0.9"/>);
+  }
+  else if(type==="Ocean"){
+    var ld=[{x:ri(25,45),y:ri(20,35),rx:ri(10,18),ry:ri(7,13),a:ri(0,60)},{x:ri(50,70),y:ri(55,70),rx:ri(8,16),ry:ri(6,12),a:ri(0,60)},{x:ri(15,30),y:ri(58,72),rx:ri(6,12),ry:ri(5,10),a:ri(0,60)}];
+    ld.forEach(function(l,i){f.push(<ellipse key={"l"+i} cx={l.x} cy={l.y} rx={l.rx} ry={l.ry} fill={c.land} opacity="0.85" transform={"rotate("+l.a+","+l.x+","+l.y+")"}/>);});
+    for(var i=0;i<4;i++){var cx2=ri(10,85),cy2=ri(10,85);f.push(<ellipse key={"cl"+i} cx={cx2} cy={cy2} rx={ri(8,18)} ry={ri(4,9)} fill="white" opacity={rf(0.15,0.3)}/>);}
+    f.push(<ellipse key="icap1" cx="50" cy="6" rx="32" ry="12" fill="#ddf4ff" opacity="0.75"/>);
+    f.push(<ellipse key="icap2" cx="50" cy="94" rx="26" ry="10" fill="#ddf4ff" opacity="0.6"/>);
+  }
+  else if(type==="Volcanic"){
+    for(var i=0;i<5;i++){var px2=ri(8,85),py2=ri(8,85);f.push(<ellipse key={"dk"+i} cx={px2} cy={py2} rx={ri(6,18)} ry={ri(5,13)} fill={c.dark} opacity="0.75"/>);}
+    for(var i=0;i<8;i++){var lx1=ri(5,95),ly1=ri(5,95),lx2=lx1+ri(-20,20),ly2=ly1+ri(-20,20);f.push(<line key={"lv"+i} x1={lx1} y1={ly1} x2={lx2} y2={ly2} stroke={c.lava} strokeWidth={rf(1.5,4)} opacity="0.85"/>);}
+    for(var i=0;i<6;i++){var lpx=ri(15,80),lpy=ri(15,80);f.push(<circle key={"lp"+i} cx={lpx} cy={lpy} r={ri(3,8)} fill={c.glow} opacity="0.9"/>);}
+  }
+  else if(type==="Ice World"){
+    for(var i=0;i<5;i++){var ipx=ri(10,85),ipy=ri(10,85);f.push(<ellipse key={"ic"+i} cx={ipx} cy={ipy} rx={ri(5,18)} ry={ri(3,9)} fill={c.ice} opacity={rf(0.25,0.55)}/>);}
+    f.push(<ellipse key="cap1" cx="50" cy="8" rx="30" ry="13" fill={c.ice} opacity="0.9"/>);
+    f.push(<ellipse key="cap2" cx="50" cy="93" rx="24" ry="10" fill={c.ice} opacity="0.7"/>);
+  }
+  else if(type==="Desert"){
+    for(var i=0;i<6;i++){var dy=8+i*15+ri(0,6);f.push(<ellipse key={"du"+i} cx="50" cy={dy} rx="44" ry={ri(5,10)} fill={c.dune} opacity="0.4"/>);}
+    for(var i=0;i<4;i++){var rpx=ri(8,85),rpy=ri(8,85);f.push(<ellipse key={"rk"+i} cx={rpx} cy={rpy} rx={ri(3,10)} ry={ri(2,6)} fill={c.dark} opacity="0.5"/>);}
+  }
+  else if(type==="Jungle"){
+    for(var i=0;i<7;i++){var fpx=ri(5,90),fpy=ri(5,90);f.push(<circle key={"fp"+i} cx={fpx} cy={fpy} r={ri(6,15)} fill={c.patch} opacity="0.55"/>);}
+    for(var i=0;i<3;i++){var wpx=ri(18,72),wpy=ri(18,72);f.push(<ellipse key={"wp"+i} cx={wpx} cy={wpy} rx={ri(4,12)} ry={ri(3,9)} fill={c.water} opacity="0.8"/>);}
+  }
+  else if(type==="Rocky"||type==="Barren"){
+    var crCount=type==="Rocky"?8:12;
+    for(var i=0;i<crCount;i++){var crx=ri(8,85),cry=ri(8,85),crr=ri(type==="Barren"?4:3,type==="Barren"?14:11);f.push(<circle key={"c"+i} cx={crx} cy={cry} r={crr} fill={c.dark} opacity="0.8"/>);f.push(<circle key={"cr"+i} cx={crx} cy={cry} r={crr} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>);}
+  }
+  else if(type==="Crystalline"){
+    for(var i=0;i<9;i++){var cpx=ri(10,85),cpy=ri(10,85),ch=ri(8,20),cw=ri(2,5);f.push(<polygon key={"crl"+i} points={cpx+","+(cpy-ch)+" "+(cpx-cw)+","+(cpy+4)+" "+(cpx+cw)+","+(cpy+4)} fill={c.crystal} opacity={rf(0.5,0.9)}/>);}
+    for(var i=0;i<8;i++){var spx=ri(5,90),spy=ri(5,90);f.push(<circle key={"csp"+i} cx={spx} cy={spy} r={rf(0.5,1.8)} fill="white" opacity={rf(0.5,1.0)}/>);}
+    f.push(<ellipse key="csh1" cx={ri(20,42)} cy={ri(20,42)} rx={ri(8,16)} ry={ri(6,12)} fill={c.shine} opacity="0.22"/>);
+    f.push(<ellipse key="csh2" cx={ri(55,75)} cy={ri(55,75)} rx={ri(6,14)} ry={ri(5,10)} fill={c.shine} opacity="0.18"/>);
+  }
+  else if(type==="Fungal"){
+    f.push(<ellipse key="fdark" cx="50" cy="50" rx="30" ry="22" fill={c.dark} opacity="0.35"/>);
+    for(var i=0;i<9;i++){var fngx=ri(8,85),fngy=ri(8,85);f.push(<circle key={"fng"+i} cx={fngx} cy={fngy} r={ri(5,14)} fill={c.spot} opacity={rf(0.35,0.65)}/>);}
+    for(var i=0;i<16;i++){var sdx=ri(5,90),sdy=ri(5,90);f.push(<circle key={"spore"+i} cx={sdx} cy={sdy} r={rf(0.5,2.2)} fill={c.spore} opacity={rf(0.4,0.8)}/>);}
+  }
+  else if(type==="Toxic"){
+    for(var i=0;i<6;i++){var tpx=ri(8,85),tpy=ri(8,85);f.push(<ellipse key={"acp"+i} cx={tpx} cy={tpy} rx={ri(6,18)} ry={ri(4,12)} fill={c.acid} opacity={rf(0.45,0.75)}/>);}
+    for(var i=0;i<8;i++){var bpx=ri(10,85),bpy=ri(10,85),br=ri(3,9);f.push(<circle key={"bbl"+i} cx={bpx} cy={bpy} r={br} fill="none" stroke={c.bubble} strokeWidth="0.9" opacity={rf(0.35,0.65)}/>);}
+    for(var i=0;i<3;i++){var swx=ri(15,75),swy=ri(15,75);f.push(<ellipse key={"swl"+i} cx={swx} cy={swy} rx={ri(10,22)} ry={ri(4,8)} fill={c.acid} opacity="0.18" transform={"rotate("+ri(0,360)+" "+swx+" "+swy+")"}/>);}
+  }
+  else if(type==="Frozen Gas Giant"){
+    var fbYs=[-36,-24,-12,0,11,23,35],fbCs=[c.band1,c.band2,c.dark,c.band1,c.band2,c.dark,c.band1];
+    for(var i=0;i<fbYs.length;i++)f.push(<rect key={"fgb"+i} x="6" y={50+fbYs[i]} width="88" height={ri(11,17)} fill={fbCs[i%fbCs.length]} opacity="0.6"/>);
+    for(var i=0;i<5;i++){var fix=ri(10,85),fiy=ri(10,85);f.push(<ellipse key={"fgi"+i} cx={fix} cy={fiy} rx={ri(5,16)} ry={ri(3,8)} fill={c.ice} opacity="0.28"/>);}
+    f.push(<ellipse key="fgcap1" cx="50" cy="7" rx="28" ry="11" fill={c.ice} opacity="0.55"/>);
+    f.push(<ellipse key="fgcap2" cx="50" cy="93" rx="22" ry="9" fill={c.ice} opacity="0.45"/>);
+  }
+
+  return(
+    <svg width={props.size||180} height={props.size||180} viewBox="0 0 100 100" style={{display:"block",overflow:"visible"}}>
+      <defs>
+        <clipPath id={uid+"c"}><circle cx="50" cy="50" r="44"/></clipPath>
+        {hasRing&&<clipPath id={uid+"rf"}><rect x="-10" y="53" width="120" height="60"/></clipPath>}
+        <radialGradient id={uid+"lg"} cx="32%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="white" stopOpacity="0.28"/>
+          <stop offset="45%" stopColor="white" stopOpacity="0"/>
+          <stop offset="100%" stopColor="black" stopOpacity="0.62"/>
+        </radialGradient>
+      </defs>
+      {c.atm&&<circle cx="50" cy="50" r="48" fill="none" stroke={c.atm} strokeWidth="7" opacity="0.22"/>}
+      {hasRing&&<ellipse cx="50" cy="54" rx="57" ry="15" fill="none" stroke={ringColor} strokeWidth="8" opacity="0.2"/>}
+      <circle cx="50" cy="50" r="44" fill={c.base}/>
+      <g clipPath={"url(#"+uid+"c)"}>{f}</g>
+      <circle cx="50" cy="50" r="44" fill={"url(#"+uid+"lg)"} clipPath={"url(#"+uid+"c)"}/>
+      {hasRing&&<ellipse cx="50" cy="54" rx="57" ry="15" fill="none" stroke={ringColor} strokeWidth="8" opacity="0.55" clipPath={"url(#"+uid+"rf)"}/>}
+    </svg>
+  );
+}
+
+// ─── ORBIT VIEW ──────────────────────────────────────────────
+function OrbitView(props){
+  var planet=props.planet,system=props.system,player=props.player,onBack=props.onBack,onScan=props.onScan,onLand=props.onLand,sensorLevel=props.sensorLevel;
+  if(!planet||!system)return null;
+  var fuel=player?(player.resources.fuel||0):99;
+  var canLand=fuel>=15;
+  var lowFuelWarning=fuel>=15&&fuel<25;
+  var RES_COLORS={metals:C.orange,crystals:C.blue,fuel:C.fuel,tech:C.cyan};
+  var hasSaved=planet.savedSurface&&planet.savedSurface.grid;
+  var surfaceGrid=planet.scanned?(hasSaved?planet.savedSurface.grid:generateSurface(system.id,planet.id,planet.type)):null;
+  var roverDotX=hasSaved?(planet.savedSurface.roverX!=null?planet.savedSurface.roverX:10):10;
+  var roverDotY=hasSaved?(planet.savedSurface.roverY!=null?planet.savedSurface.roverY:10):10;
+  var stats=planet.surfaceStats;
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div>
+          <div style={{fontSize:px(18),fontWeight:"700",color:planet.color}}>{planet.name}</div>
+          <div style={{fontSize:px(13),color:C.dim,marginBottom:"4px"}}>{planet.type} · {system.name}</div>
+          {planet.anomaly&&<div style={{fontSize:px(10),color:C.purple,background:"rgba(153,85,255,0.15)",border:"1px solid rgba(153,85,255,0.4)",borderRadius:"4px",padding:"2px 8px",letterSpacing:"1px",display:"inline-block",marginBottom:"4px"}}>⚠ ANOMALY</div>}
+          {(function(){
+            var terrain=PRIMARY_TERRAIN[planet.type]||"plains";
+            var res=TERRAIN_RES[terrain]||["metals","crystals","fuel","tech"];
+            var counts={};res.forEach(function(r){counts[r]=(counts[r]||0)+1;});
+            var RES_COLS={metals:C.orange,crystals:C.blue,fuel:C.fuel,tech:C.cyan};
+            var RES_LBL={metals:"M",crystals:"C",fuel:"F",tech:"T"};
+            var sorted=Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];});
+            return(
+              <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                <span style={{fontSize:px(10),color:C.dim}}>Resources:</span>
+                {sorted.map(function(r){
+                  var dots=[];
+                  for(var i=0;i<counts[r];i++)dots.push(<span key={i} style={{color:RES_COLS[r],fontSize:px(10)}}>●</span>);
+                  return <span key={r} style={{display:"flex",alignItems:"center",gap:"1px"}}>{dots}<span style={{fontSize:px(10),color:RES_COLS[r],marginLeft:"1px"}}>{RES_LBL[r]}</span></span>;
+                })}
+              </div>
+            );
+          })()}
+        </div>
+        <button onClick={onBack} style={bs(C.dim,true)}>← System</button>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"center",marginBottom:isTablet?"20px":"8px"}}>
+        <PlanetSVG planet={planet} systemId={system.id} size={isTablet?260:130}/>
+      </div>
+
+      {planet.scanned&&(
+        <div style={{marginBottom:isTablet?"20px":"8px",textAlign:"center"}}>
+          <div style={{fontSize:px(11),letterSpacing:"2px",color:C.dim,marginBottom:"5px"}}>
+            LEVEL {sensorLevel} SCAN{sensorLevel===2?" + RESOURCES":""}
+          </div>
+          {sensorLevel===0&&surfaceGrid&&(function(){
+            var rough=[];
+            for(var ry2=0;ry2<5;ry2++)for(var rx2=0;rx2<5;rx2++){
+              var sy=Math.min(ry2*4,19),sx=Math.min(rx2*4,19);
+              rough.push({x:rx2,y:ry2,type:surfaceGrid[sy][sx].type,rev:surfaceGrid[sy][sx].revealed});
+            }
+            var dotX=Math.min(4,Math.round(roverDotX/4));
+            var dotY=Math.min(4,Math.round(roverDotY/4));
+            return(<svg width={isTablet?180:120} height={isTablet?180:120} viewBox="0 0 5 5" style={{borderRadius:"6px",border:"1px solid "+C.border,imageRendering:"pixelated",display:"block",margin:"0 auto"}}>
+              {rough.map(function(cell){var t=terrainColors(cell.type,planet.type);return <rect key={cell.x+","+cell.y} x={cell.x} y={cell.y} width={1} height={1} fill={hasSaved&&!cell.rev?"#07071a":t.bg}/>;} )}
+              <circle cx={dotX+0.5} cy={dotY+0.5} r="0.38" fill={C.cyan} opacity="0.9"/>
+            </svg>);
+          })()}
+          {sensorLevel>=1&&surfaceGrid&&(
+            <svg width={isTablet?180:120} height={isTablet?180:120} viewBox="0 0 20 20" style={{borderRadius:"6px",border:"1px solid "+C.border,imageRendering:"pixelated",display:"block",margin:"0 auto"}}>
+              {surfaceGrid.map(function(row,y){return row.map(function(tile,x){
+                var terrain=terrainColors(tile.type,planet.type);
+                var resCol=sensorLevel>=2&&tile.resource?RES_COLORS[tile.resource]:null;
+                var tileFill=hasSaved&&!tile.revealed?"#07071a":terrain.bg;
+                return(<g key={x+","+y}><rect x={x} y={y} width={1} height={1} fill={tileFill}/>{resCol&&<circle cx={x+0.5} cy={y+0.5} r="0.22" fill={resCol} opacity="0.9"/>}</g>);
+              });} )}
+              <circle cx={roverDotX+0.5} cy={roverDotY+0.5} r="0.5" fill={C.cyan} opacity="0.9"/>
+            </svg>
+          )}
+        </div>
+      )}
+
+      {stats&&(
+        <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:"10px",padding:isTablet?"14px 12px":"8px 12px",marginBottom:isTablet?"20px":"8px",display:"flex",gap:"16px",alignItems:"center"}}>
+          <span style={{fontSize:px(12),color:C.dim,flexShrink:0}}>SURVEY</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:px(12),color:C.dim,marginBottom:"2px"}}>Resources <span style={{color:C.orange}}>{stats.collectedRes}/{stats.totalRes}</span></div>
+            <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:Math.round((stats.collectedRes/Math.max(1,stats.totalRes))*100)+"%",height:"100%",background:C.orange,borderRadius:"2px"}}/></div>
+          </div>
+          {stats.totalRuins>0&&<div style={{flex:1}}>
+            <div style={{fontSize:px(12),color:C.dim,marginBottom:"2px"}}>Ruins <span style={{color:C.yellow}}>{stats.lootedRuins}/{stats.totalRuins}</span></div>
+            <div style={{height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:Math.round((stats.lootedRuins/Math.max(1,stats.totalRuins))*100)+"%",height:"100%",background:C.yellow,borderRadius:"2px"}}/></div>
+          </div>}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+        <button onClick={onScan} style={bs(C.cyan,!planet.scanned)}>{planet.scanned?"✓ Scanned":"🔭 Scan"}</button>
+        <button onClick={onLand} style={bs(canLand?C.green:C.red,canLand)}>🚀 Land (-5⛽)</button>
+      </div>
+      {!canLand&&<div style={{fontSize:px(13),color:C.red,textAlign:"center",marginTop:"6px"}}>Need 15 fuel to land safely (5 land + 10 liftoff)</div>}
+    </div>
+  );
+}
+
+// ─── SURFACE VIEW ────────────────────────────────────────────
+function SurfaceView(props){
+  var surface=props.surface,rover=props.rover,player=props.player,onMove=props.onMove,onLaser=props.onLaser,onLiftoff=props.onLiftoff,onRestart=props.onRestart,surfaceLog=props.surfaceLog,system=props.system,planet=props.planet,roverSensorLevel=props.roverSensorLevel||0;
+  if(!surface)return null;
+  var grid=surface.grid,rx=surface.roverX,ry=surface.roverY;
+  var availW=window.innerWidth-(isTablet?PAD*2+4:PAD*2);
+  var overhead=Math.min(isTablet?500:280,Math.round(window.innerHeight*(isTablet?0.44:0.33)));
+  var availH=Math.max(100,window.innerHeight-overhead);
+  var CELL=Math.max(10,Math.min(Math.floor(availW/20),Math.floor(availH/20)));
+  var currentTerrain=TERRAIN[grid[ry][rx].type]||TERRAIN.plains;
+  var liftFuel=10;
+  var hasLiftFuel=(player.resources.fuel||0)>=liftFuel;
+  var usedRC=roverCargoUsed(rover),maxRC=rover.cargoMax;
+  var rcPct=maxRC>0?Math.round((usedRC/maxRC)*100):0;
+  var rcColor=rcPct>90?C.red:rcPct>70?C.yellow:C.green;
+  var adjCreatures=[];
+  for(var dy2=-1;dy2<=1;dy2++)for(var dx2=-1;dx2<=1;dx2++){if(dx2===0&&dy2===0)continue;var nx2=rx+dx2,ny2=ry+dy2;if(nx2>=0&&nx2<20&&ny2>=0&&ny2<20&&grid[ny2][nx2].revealed&&grid[ny2][nx2].creature)adjCreatures.push({x:nx2,y:ny2});}
+  var resColors={metals:C.orange,crystals:C.blue,fuel:C.fuel,tech:C.cyan};
+  var stats=planet?planet.surfaceStats:null;
+  var shipUsed=shipCargoUsed(player),shipMax=shipCargoMax(player),shipSpace=shipMax-shipUsed;
+  var roverNonFuel=(rover.cargo.metals||0)+(rover.cargo.crystals||0)+(rover.cargo.tech||0);
+  var willLose=Math.max(0,roverNonFuel-shipSpace);
+  var shipCargoFull=shipSpace<=0&&roverNonFuel>0;
+  return(
+    <div style={{overflow:"hidden",margin:"0 -"+PAD+"px",padding:"0 8px"}}>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+        <span style={{fontSize:px(14),fontWeight:"700",letterSpacing:"3px",color:"#fff"}}>VOID ATLAS</span>
+        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style={{fontSize:px(12),color:C.yellow}}>⌬{player.credits}</span>
+          <button onClick={onRestart} style={{background:"rgba(255,68,102,0.12)",border:"1px solid rgba(255,68,102,0.3)",color:"rgba(255,110,140,0.9)",borderRadius:"6px",padding:"3px 10px",fontSize:px(13),cursor:"pointer"}}>↺ New</button>
+        </div>
+      </div>
+
+      {/* ── ROVER FRAME ── */}
+      <div style={{border:"1px solid rgba(100,220,160,0.35)",borderRadius:"10px",overflow:"hidden",marginBottom:"6px",margin:"0 4px 6px"}}>
+        <div style={{background:"rgba(68,221,170,0.07)",borderBottom:"1px solid rgba(100,220,160,0.2)",padding:"2px 10px",fontSize:px(9),color:"#44ddaa",letterSpacing:"2px"}}>ROVER</div>
+        <div style={{padding:"7px 10px 6px"}}>
+          {/* Hull + Cargo bars */}
+          {(function(){
+            var hp=rover.maxHull>0?Math.round((rover.hull/rover.maxHull)*100):0;
+            var hc=hp>60?C.green:hp>30?C.yellow:C.red;
+            return(
+              <div style={{marginBottom:"5px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"4px"}}>
+                  <span style={{fontSize:px(10),color:C.dim,minWidth:px(40),flexShrink:0}}>HULL</span>
+                  <div style={{flex:1,height:px(4),background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:hp+"%",height:"100%",background:hc,borderRadius:"2px",transition:"width 0.2s"}}/></div>
+                  <span style={{fontSize:px(10),color:hc,minWidth:px(44),textAlign:"right",flexShrink:0}}>{Math.round(rover.hull)}/{rover.maxHull}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                  <span style={{fontSize:px(10),color:C.dim,minWidth:px(40),flexShrink:0}}>CARGO</span>
+                  <div style={{flex:1,height:px(4),background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}><div style={{width:rcPct+"%",height:"100%",background:rcColor,borderRadius:"2px"}}/></div>
+                  <span style={{fontSize:px(10),color:rcColor,minWidth:px(44),textAlign:"right",flexShrink:0}}>{usedRC}/{maxRC}</span>
+                </div>
+              </div>
+            );
+          })()}
+          {/* Laser: horizontal segmented full-width bar */}
+          {(function(){
+            var lc="rgba(255,100,100,0.9)";
+            var segs=[];
+            for(var bi=0;bi<rover.maxLaserShots;bi++){
+              segs.push(
+                <div key={bi} style={{flex:1,height:px(4),background:bi<rover.laserShots?lc:"rgba(255,255,255,0.08)",borderRadius:"2px",marginLeft:bi===0?"0":"2px"}}/>
+              );
+            }
+            return(
+              <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}}>
+                <span style={{fontSize:px(10),color:C.dim,minWidth:px(40),flexShrink:0}}>LASER</span>
+                <div style={{flex:1,display:"flex"}}>{segs}</div>
+                <span style={{fontSize:px(10),color:lc,minWidth:px(44),textAlign:"right",flexShrink:0}}>{rover.laserShots}/{rover.maxLaserShots}</span>
+              </div>
+            );
+          })()}
+          {/* Upgrade pips: 3-segment vertical bars */}
+          {(function(){
+            var ups=[
+              {label:"CHAS",level:player.upgrades.roverChassis,color:C.green},
+              {label:"SENS",level:player.upgrades.roverSensor,color:C.cyan},
+              {label:"LASR",level:player.upgrades.roverLaser,color:"#ff6666"},
+              {label:"CRGO",level:player.upgrades.roverCargo,color:C.orange},
+            ];
+            return(
+              <div style={{display:"flex",justifyContent:"space-around"}}>
+                {ups.map(function(u){
+                  var pips=[];
+                  for(var pi=0;pi<3;pi++){
+                    var filled=pi>=(3-u.level);
+                    pips.push(<div key={pi} style={{width:"26px",height:"5px",borderRadius:"2px",background:filled?u.color:"rgba(255,255,255,0.1)",marginBottom:"2px"}}/>);
+                  }
+                  return(
+                    <div key={u.label} style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                      {pips}
+                      <div style={{fontSize:px(9),color:C.dim,letterSpacing:"0.5px",marginTop:"2px"}}>{u.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* ── PLANET SECTION ── */}
+      <div style={{padding:"0 10px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"3px"}}>
+        <div>
+          <div style={{fontSize:px(18),fontWeight:"700",color:C.green}}>{planet?planet.name:"Surface"}</div>
+          <div style={{fontSize:px(12),color:C.dim}}>{currentTerrain.name}</div>
+        </div>
+        <button onClick={onLiftoff} style={bs(willLose>0?C.red:!hasLiftFuel?C.red:C.orange,hasLiftFuel)}>↑ Lift Off {hasLiftFuel?"(-"+liftFuel+"⛽)":"(need "+liftFuel+"⛽)"}</button>
+      </div>
+      {willLose>0&&(
+        <div style={{background:"rgba(255,68,102,0.1)",border:"1px solid "+C.red+"55",borderRadius:"8px",padding:"5px 10px",marginBottom:"4px",fontSize:px(12),color:C.red}}>
+          ⚠ Lifting off loses <span style={{fontWeight:"700"}}>{willLose} units</span> — sell at starbase first.
+        </div>
+      )}
+
+      {/* Progress bars */}
+      {(function(){
+        var totalTiles=400;
+        var revealedTiles=0;
+        grid.forEach(function(row){row.forEach(function(t){if(t.revealed)revealedTiles++;});});
+        var exploredPct=revealedTiles===totalTiles?100:Math.min(99,Math.round((revealedTiles/totalTiles)*100));
+        var resPct=stats&&stats.totalRes>0?(stats.collectedRes===stats.totalRes?100:Math.min(99,Math.round((stats.collectedRes/stats.totalRes)*100))):0;
+        var ruinPct=stats&&stats.totalRuins>0?(stats.lootedRuins===stats.totalRuins?100:Math.min(99,Math.round((stats.lootedRuins/stats.totalRuins)*100))):0;
+        var LBL={minWidth:"74px",flexShrink:0,fontSize:px(10),color:C.dim};
+        var VAL={flexShrink:0,minWidth:"34px",textAlign:"right",fontSize:px(10)};
+        function pbar(label,pct,color){return(
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
+            <span style={LBL}>{label}</span>
+            <div style={{flex:1,height:"4px",background:"rgba(255,255,255,0.08)",borderRadius:"2px"}}>
+              <div style={{width:pct+"%",height:"100%",background:color,borderRadius:"2px",transition:"width 0.3s"}}/>
+            </div>
+            <span style={Object.assign({},VAL,{color:pct===100?C.green:color})}>{pct}%</span>
+          </div>
+        );}
+        return(
+          <div style={{marginBottom:"4px",marginTop:"3px"}}>
+            {pbar("Explored",exploredPct,C.cyan)}
+            {pbar("Resources",resPct,C.orange)}
+            {stats&&stats.totalRuins>0&&pbar("Ruins found",ruinPct,C.yellow)}
+          </div>
+        );
+      })()}
+      </div>{/* end planet section padding */}
+
+      <div style={{width:20*CELL+"px",margin:"0 auto 6px",borderRadius:"8px",border:"1px solid "+C.border,background:"#07071a",cursor:"crosshair",overflow:"hidden",position:"relative"}}
+        onClick={function(e){
+          var cont=e.currentTarget;
+          var rect=cont.getBoundingClientRect();
+          var tapGX=Math.floor((e.clientX-rect.left+cont.scrollLeft)/CELL);
+          var tapGY=Math.floor((e.clientY-rect.top+cont.scrollTop)/CELL);
+          if(tapGX<0||tapGX>=20||tapGY<0||tapGY>=20)return;
+          var mx=tapGX<7?-1:tapGX>12?1:0;
+          var my=tapGY<7?-1:tapGY>12?1:0;
+          if(mx===0&&my===0)return;
+          var nx=rx+mx,ny=ry+my;
+          if(nx<0||nx>=20||ny<0||ny>=20)return;
+          var tt=grid[ny][nx];
+          if(!tt.revealed)return;
+          if(tt.creature&&rover.laserShots>0){onLaser(nx,ny);return;}
+          var terr=TERRAIN[tt.type]||TERRAIN.plains;
+          if(!tt.creature&&terr.passable<=rover.chassisLevel)onMove(nx,ny);
+        }}>
+        <div style={{width:20*CELL+"px",position:"relative"}}>
+          {(function(){
+            var maxE2=rover.maxEnergy||roverMaxEnergy(rover.chassisLevel||0);
+            var curE2=(rover.energy!==undefined&&rover.energy!==null)?rover.energy:maxE2;
+            var ep2=maxE2>0?Math.min(1,curE2/maxE2):1;
+            var ec2=ep2>0.6?C.green:ep2>0.3?C.yellow:C.red;
+            var gaugeSize=isTablet?90:58;
+            var sw2=Math.round(gaugeSize*0.075);
+            var r2=Math.round(gaugeSize*0.365),cxy2=Math.round(gaugeSize/2),circ2=2*Math.PI*r2;
+            var offset2=(1-ep2)*circ2;
+            var gaugeOnLeft=rx>=16&&ry<=3;
+            var pulsing=ep2<0.3;
+            var pulseSpeed=ep2<0.1?"0.4s":"0.8s";
+            return(
+              <svg width={gaugeSize} height={gaugeSize} viewBox={"0 0 "+gaugeSize+" "+gaugeSize}
+                style={{position:"absolute",top:"4px",
+                  left:gaugeOnLeft?"4px":"auto",
+                  right:gaugeOnLeft?"auto":"4px",
+                  zIndex:10,
+                  filter:"drop-shadow(0 0 4px rgba(0,0,0,0.9))",pointerEvents:"none",
+                  transition:"left 0.25s ease, right 0.25s ease",
+                  animation:pulsing?"nrgPulse "+pulseSpeed+" ease-in-out infinite":"none",
+                  transformOrigin:cxy2+"px "+cxy2+"px"}}>
+                <circle cx={cxy2} cy={cxy2} r={cxy2-2} fill="rgba(7,7,26,0.18)"/>
+                <circle cx={cxy2} cy={cxy2} r={r2} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={sw2}/>
+                <circle cx={cxy2} cy={cxy2} r={r2} fill="none" stroke={ec2} strokeWidth={sw2}
+                  strokeDasharray={circ2} strokeDashoffset={offset2}
+                  strokeLinecap="round" transform={"rotate(-90 "+cxy2+" "+cxy2+")"}/>
+                <text x={cxy2} y={cxy2-1} textAnchor="middle" dominantBaseline="middle"
+                  fill={ec2} fontSize={Math.round(gaugeSize*0.21)} fontWeight="700">{Math.round(ep2*100)}%</text>
+                <text x={cxy2} y={cxy2+Math.round(gaugeSize*0.19)} textAnchor="middle"
+                  fill={"rgba(255,255,255,0.45)"} fontSize={Math.round(gaugeSize*0.125)}>⚡NRG</text>
+              </svg>
+            );
+          })()}
+          {grid.map(function(row,y){return(
+            <div key={y} style={{display:"flex"}}>
+              {row.map(function(tile,x){
+                var isRover=(x===rx&&y===ry);
+                var isAdj=Math.abs(x-rx)<=1&&Math.abs(y-ry)<=1&&!isRover;
+                var terrain=TERRAIN[tile.type]||TERRAIN.plains;
+                var passOk=terrain.passable<=rover.chassisLevel;
+                if(!tile.revealed)return <div key={x} style={{width:CELL+"px",height:CELL+"px",background:"#07071a",flexShrink:0,borderRight:"1px solid #1e1e40",borderBottom:"1px solid #1e1e40"}}/>;
+                var bg=terrainColors(tile.type,planet?planet.type:null).bg;
+                var borderCol=isAdj&&passOk&&!tile.creature?"rgba(255,255,255,0.15)":"transparent";
+                var creatureIcon=null;
+                if(tile.creature){
+                  if(roverSensorLevel===0)creatureIcon=<div style={{fontSize:px(8),lineHeight:1,color:"#888"}}>👾</div>;
+                  else{if(tile.creatureType==="passive")creatureIcon=<div style={{fontSize:px(8),lineHeight:1}}>🐛</div>;else if(tile.creatureType==="normal")creatureIcon=<div style={{fontSize:px(8),lineHeight:1,color:"#ffaa33"}}>⚡</div>;else creatureIcon=<div style={{fontSize:px(8),lineHeight:1,color:C.red}}>🔴</div>;}
+                }
+                return(
+                  <div key={x} style={{width:CELL+"px",height:CELL+"px",background:bg,flexShrink:0,border:"1px solid "+borderCol,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>
+                    {isRover&&(function(){
+                      var cl=rover.chassisLevel||0;
+                      var cc=C.cyan;
+                      var sw=Math.min(CELL-1,16),sh=Math.min(CELL-1,13);
+                      if(cl===0){return(
+                        <svg width={sw} height={sh} viewBox="0 0 28 20" style={{overflow:"visible"}}>
+                          <circle cx="5" cy="15" r="3.5" fill="#061818" stroke={cc} strokeWidth="1"/>
+                          <line x1="5" y1="11.5" x2="5" y2="18.5" stroke={cc} strokeWidth="0.6" opacity="0.5"/>
+                          <line x1="1.5" y1="15" x2="8.5" y2="15" stroke={cc} strokeWidth="0.6" opacity="0.5"/>
+                          <circle cx="5" cy="15" r="1.2" fill={cc} opacity="0.8"/>
+                          <circle cx="23" cy="15" r="3.5" fill="#061818" stroke={cc} strokeWidth="1"/>
+                          <line x1="23" y1="11.5" x2="23" y2="18.5" stroke={cc} strokeWidth="0.6" opacity="0.5"/>
+                          <line x1="19.5" y1="15" x2="26.5" y2="15" stroke={cc} strokeWidth="0.6" opacity="0.5"/>
+                          <circle cx="23" cy="15" r="1.2" fill={cc} opacity="0.8"/>
+                          <polygon points="3,5 22,5 26,12 3,12" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <polygon points="6,5 15,5 14.5,9 6,9" fill={cc} opacity="0.13" stroke={cc} strokeWidth="0.5"/>
+                          <line x1="8" y1="5" x2="8" y2="1" stroke={cc} strokeWidth="0.8"/>
+                          <circle cx="8" cy="1" r="1.2" fill={cc}/>
+                        </svg>
+                      );}
+                      if(cl===1){return(
+                        <svg width={sw} height={sh} viewBox="0 0 28 20" style={{overflow:"visible"}}>
+                          <circle cx="4" cy="15.5" r="3" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="4" cy="15.5" r="1.1" fill={cc} opacity="0.8"/>
+                          <circle cx="10" cy="16" r="3" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="10" cy="16" r="1.1" fill={cc} opacity="0.8"/>
+                          <circle cx="18" cy="16" r="3" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="18" cy="16" r="1.1" fill={cc} opacity="0.8"/>
+                          <circle cx="24" cy="15.5" r="3" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="24" cy="15.5" r="1.1" fill={cc} opacity="0.8"/>
+                          <polygon points="2,4 22,4 27,12 2,12" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <polygon points="6,4 16,4 15,8.5 6,8.5" fill={cc} opacity="0.13" stroke={cc} strokeWidth="0.5"/>
+                          <line x1="7" y1="4" x2="7" y2="0.5" stroke={cc} strokeWidth="0.8"/>
+                          <circle cx="7" cy="0.5" r="1.1" fill={cc}/>
+                          <line x1="19" y1="4" x2="19" y2="2" stroke={cc} strokeWidth="0.8"/>
+                          <path d="M16.5,2 Q19,0.5 21.5,2" fill="none" stroke={cc} strokeWidth="0.9"/>
+                        </svg>
+                      );}
+                      if(cl===2){return(
+                        <svg width={sw} height={sh} viewBox="0 0 28 20" style={{overflow:"visible"}}>
+                          <rect x="1" y="12" width="26" height="7.5" rx="3.5" fill="#061818" stroke={cc} strokeWidth="1"/>
+                          <circle cx="4.5" cy="15.8" r="3" fill="#061818" stroke={cc} strokeWidth="0.8"/>
+                          <circle cx="4.5" cy="15.8" r="1.1" fill={cc} opacity="0.65"/>
+                          <circle cx="11" cy="17.5" r="1.6" fill="#061818" stroke={cc} strokeWidth="0.6"/>
+                          <circle cx="16" cy="17.5" r="1.6" fill="#061818" stroke={cc} strokeWidth="0.6"/>
+                          <circle cx="21" cy="17.5" r="1.6" fill="#061818" stroke={cc} strokeWidth="0.6"/>
+                          <circle cx="23.5" cy="15.8" r="3.2" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="23.5" cy="15.8" r="1.2" fill={cc} opacity="0.7"/>
+                          <rect x="2.5" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="6" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="9.5" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="13" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="16.5" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="20" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="23.5" y="19" width="2.5" height="1.1" rx="0.3" fill={cc} opacity="0.55"/>
+                          <rect x="3" y="11.5" width="2.5" height="0.9" rx="0.3" fill={cc} opacity="0.3"/>
+                          <rect x="9" y="11.5" width="2.5" height="0.9" rx="0.3" fill={cc} opacity="0.3"/>
+                          <rect x="15" y="11.5" width="2.5" height="0.9" rx="0.3" fill={cc} opacity="0.3"/>
+                          <rect x="21" y="11.5" width="2.5" height="0.9" rx="0.3" fill={cc} opacity="0.3"/>
+                          <polygon points="2,2 21,2 26,10 2,10" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <polygon points="5,2 15,2 14,7 5,7" fill={cc} opacity="0.13" stroke={cc} strokeWidth="0.5"/>
+                          <line x1="6" y1="2" x2="6" y2="-1" stroke={cc} strokeWidth="0.8"/>
+                          <circle cx="6" cy="-1" r="1.1" fill={cc}/>
+                          <line x1="18" y1="2" x2="18" y2="0" stroke={cc} strokeWidth="0.8"/>
+                          <path d="M15.5,0 Q18,-1.5 20.5,0" fill="none" stroke={cc} strokeWidth="0.9"/>
+                        </svg>
+                      );}
+                      return(
+                        <svg width={sw} height={sh} viewBox="0 0 28 20" style={{overflow:"visible"}}>
+                          <rect x="0" y="10.5" width="28" height="9" rx="4.5" fill="#061818" stroke={cc} strokeWidth="1.1"/>
+                          <circle cx="4.5" cy="15" r="3.8" fill="#061818" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="4.5" cy="15" r="1.5" fill={cc} opacity="0.7"/>
+                          <circle cx="10.5" cy="17.5" r="2" fill="#061818" stroke={cc} strokeWidth="0.7"/>
+                          <circle cx="15" cy="17.8" r="2" fill="#061818" stroke={cc} strokeWidth="0.7"/>
+                          <circle cx="19.5" cy="17.5" r="2" fill="#061818" stroke={cc} strokeWidth="0.7"/>
+                          <circle cx="23.5" cy="15" r="4" fill="#061818" stroke={cc} strokeWidth="1"/>
+                          <circle cx="23.5" cy="15" r="1.6" fill={cc} opacity="0.75"/>
+                          <rect x="1" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="5" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="9" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="13" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="17" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="21" y="19" width="3" height="1.3" rx="0.4" fill={cc} opacity="0.6"/>
+                          <rect x="2" y="10" width="3" height="1.1" rx="0.3" fill={cc} opacity="0.35"/>
+                          <rect x="7" y="10" width="3" height="1.1" rx="0.3" fill={cc} opacity="0.35"/>
+                          <rect x="12" y="10" width="3" height="1.1" rx="0.3" fill={cc} opacity="0.35"/>
+                          <rect x="17" y="10" width="3" height="1.1" rx="0.3" fill={cc} opacity="0.35"/>
+                          <rect x="22" y="10" width="3" height="1.1" rx="0.3" fill={cc} opacity="0.35"/>
+                          <polygon points="1,1 20,1 27,9 1,9" fill="#061818" stroke={cc} strokeWidth="1.1"/>
+                          <line x1="13" y1="1" x2="15" y2="9" stroke={cc} strokeWidth="0.4" opacity="0.3"/>
+                          <polygon points="4,1 13,1 12,6.5 4,6.5" fill={cc} opacity="0.16" stroke={cc} strokeWidth="0.5"/>
+                          <line x1="5" y1="1" x2="5" y2="-2" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="5" cy="-2" r="1.3" fill={cc}/>
+                          <line x1="12" y1="1" x2="12" y2="-2" stroke={cc} strokeWidth="0.9"/>
+                          <circle cx="12" cy="-2" r="1.3" fill={cc}/>
+                          <rect x="6.5" y="-2.5" width="4" height="2.2" rx="0.5" fill={cc} opacity="0.25" stroke={cc} strokeWidth="0.5"/>
+                          <circle cx="7.8" cy="-1.4" r="0.6" fill={cc} opacity="0.8"/>
+                          <circle cx="9.3" cy="-1.4" r="0.6" fill={cc} opacity="0.8"/>
+                        </svg>
+                      );
+                    })()}
+                    {!isRover&&tile.creature&&creatureIcon}
+                    {!isRover&&!tile.creature&&tile.ruin&&!tile.ruinLooted&&<div style={{fontSize:px(8),color:"#ffcc44",lineHeight:1}}>✦</div>}
+                    {!isRover&&!tile.creature&&tile.ruin&&tile.ruinLooted&&<div style={{fontSize:px(7),color:"#444",lineHeight:1}}>✦</div>}
+                    {!isRover&&!tile.creature&&!tile.ruin&&tile.resource&&<div style={{width:"6px",height:"6px",borderRadius:"50%",background:resColors[tile.resource]||C.dim,flexShrink:0,boxShadow:"0 0 2px rgba(0,0,0,0.8)"}}/>}
+                    {!isRover&&!tile.creature&&!tile.ruin&&!tile.resource&&!passOk&&<div style={{fontSize:px(7),color:"rgba(255,255,255,0.2)",lineHeight:1}}>{terrain.passable===1?"▲":"≈"}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          );})}
+        </div>
+      </div>
+
+
+      {adjCreatures.length>0&&rover.laserShots>0&&<div style={{background:"rgba(255,68,102,0.08)",border:"1px solid "+C.red+"44",borderRadius:"10px",padding:"8px 12px",marginBottom:"8px",fontSize:px(13),color:C.red}}>⚠ Creature nearby — tap to laser ({rover.laserShots} shots left)</div>}
+      {adjCreatures.length>0&&rover.laserShots<=0&&<div style={{background:"rgba(255,68,102,0.05)",border:"1px solid "+C.red+"22",borderRadius:"10px",padding:"8px 12px",marginBottom:"8px",fontSize:px(13),color:C.dim}}>⚠ Creature adjacent — no shots. Avoid or lift off.</div>}
+
+      <div style={{fontSize:px(13),color:C.dim,marginBottom:"6px",display:"flex",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+        {roverSensorLevel===0&&<span>👾 Lifeform</span>}
+        {roverSensorLevel>=1&&<span><span style={{marginRight:"6px"}}>🐛 Passive</span><span style={{color:"#ffaa33",marginRight:"6px"}}>⚡ Normal</span><span>🔴 Aggressive</span></span>}
+        <span><span style={{color:C.orange}}>●</span>M <span style={{color:C.blue}}>●</span>C <span style={{color:C.yellow}}>●</span>F <span style={{color:C.cyan}}>●</span>T</span>
+        <span style={{color:"#ffcc44"}}>✦ Ruin</span>
+      </div>
+
+      {surfaceLog.length>0&&(
+        <div style={{background:"rgba(0,0,0,0.3)",borderRadius:"8px",padding:"6px 10px",marginTop:"6px",fontSize:px(13)}}>
+          {surfaceLog.slice(0,4).map(function(l,i){
+            var col=l.indexOf("★")>=0?C.yellow:l.indexOf("attacks")>=0||l.indexOf("hull")>=0?C.red:l.indexOf("RUIN")>=0?"#ffcc88":l.indexOf("Collected")>=0||l.indexOf("eliminated")>=0?C.cyan:l.indexOf("cargo full")>=0||l.indexOf("lost")>=0?C.orange:l.indexOf("Returned")>=0||l.indexOf("Landed")>=0?C.green:C.dim;
+            return <div key={i} style={{opacity:Math.max(0.4,1-i*0.2),color:col,marginBottom:"2px"}}>▶ {l}</div>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── COMBAT ──────────────────────────────────────────────────
+function CombatView(props){
+  var combat=props.combat,player=props.player,onAction=props.onAction,onPower=props.onPower;
+  var enemy=combat.enemy,env=combat.env,combatLog=combat.combatLog;
+  var inNebula=env==="nebula",inAsteroids=env==="asteroids";
+  var powerRows=[{k:"shields",label:"SHIELDS",color:C.blue},{k:"weapons",label:"WEAPONS",color:C.red},{k:"engines",label:"ENGINES",color:C.green}];
+  return(
+    <div>
+      {env!=="normal"&&<div style={{background:inNebula?"rgba(153,85,255,0.1)":"rgba(255,136,68,0.08)",border:"1px solid "+(inNebula?C.purple+"55":C.orange+"55"),borderRadius:"10px",padding:"8px 12px",marginBottom:"10px",fontSize:px(13),textAlign:"center",color:inNebula?C.purple:C.orange}}>{inNebula?"⚡ NEBULA — All shields offline":"☄ ASTEROID FIELD — Missiles may be blocked"}</div>}
+      <div style={{background:C.panel,border:"1px solid "+C.red+"44",borderRadius:"14px",padding:"14px",marginBottom:"10px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"10px"}}>
+          <div><div style={{fontSize:px(17),fontWeight:"700",color:C.red}}>{enemy.name}</div><div style={{fontSize:px(13),color:C.dim}}>ATK: {enemy.atk}</div></div>
+          <div style={{fontSize:px(28),lineHeight:1}}>{enemy.icon}</div>
+        </div>
+        <StatBar label="HULL" val={Math.max(0,Math.round(enemy.hull))} max={enemy.maxHull} color={C.red}/>
+        <div style={{marginTop:"6px"}}><StatBar label="SHIELDS" val={inNebula?0:Math.max(0,Math.round(enemy.shields))} max={Math.max(1,enemy.maxShields)} color={C.blue}/></div>
+      </div>
+      <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:"12px",padding:"12px",marginBottom:"10px"}}>
+        <div style={{fontSize:px(12),letterSpacing:"2px",color:C.dim,marginBottom:"8px"}}>POWER ALLOCATION ({player.reactorMax} pts)</div>
+        {powerRows.map(function(row){return(
+          <div key={row.k} style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}}>
+            <div style={{width:"56px",fontSize:px(13),color:C.dim,letterSpacing:"1px"}}>{row.label}</div>
+            <button onClick={function(){onPower(row.k,-1);}} style={Object.assign({},bs(row.color,true),{padding:"2px 10px",fontSize:px(16),lineHeight:1})}>−</button>
+            <div style={{flex:1,background:"rgba(0,0,0,0.35)",borderRadius:"4px",height:"9px",overflow:"hidden"}}><div style={{width:(player.power[row.k]/player.reactorMax)*100+"%",height:"100%",borderRadius:"4px",background:"linear-gradient(90deg,"+row.color+"88,"+row.color+")",transition:"width 0.2s"}}/></div>
+            <div style={{width:"18px",textAlign:"center",fontSize:px(12),color:row.color,fontWeight:"700"}}>{player.power[row.k]}</div>
+            <button onClick={function(){onPower(row.k,1);}} style={Object.assign({},bs(row.color,true),{padding:"2px 10px",fontSize:px(16),lineHeight:1})}>+</button>
+          </div>
+        );})}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+        <button onClick={function(){onAction("laser");}} style={bs(C.cyan,true)}>🔵<br/><span style={{fontSize:px(13)}}>Laser</span></button>
+        <button onClick={function(){onAction("missile");}} style={bs(C.orange,true)}>🚀<br/><span style={{fontSize:px(13)}}>Missile{inAsteroids?" ⚠":""}</span></button>
+        <button onClick={function(){onAction("flee");}} style={bs(C.dim,true)}>💨<br/><span style={{fontSize:px(13)}}>Flee</span></button>
+      </div>
+      <div style={{background:"rgba(0,0,0,0.3)",borderRadius:"10px",padding:"10px 12px",fontSize:px(13),color:C.dim,maxHeight:"90px",overflow:"auto"}}>
+        {combatLog.filter(Boolean).slice(0,6).map(function(l,i){return <div key={i} style={{marginBottom:"3px",opacity:Math.max(0.3,1-i*0.15)}}>▶ {l}</div>;})}
+      </div>
+    </div>
+  );
+}
+
+// ─── STATION SVG ─────────────────────────────────────────────
+function StationSVG(props){
+  var shipType=props.shipType||"small";
+  var shipColor=C.cyan;
+  var cx=150,cy=75;
+  // Stars
+  var sr=seededRand(777);
+  var stars=[];
+  for(var si=0;si<35;si++){stars.push(<circle key={"s"+si} cx={Math.floor(sr()*300)} cy={Math.floor(sr()*170)} r={sr()<0.15?1.5:0.7} fill="white" opacity={0.2+sr()*0.6}/>);}
+  // Hexagon hub
+  var hexPts=[];
+  for(var hi=0;hi<6;hi++){var ha=(hi*60-30)*Math.PI/180;hexPts.push((cx+26*Math.cos(ha)).toFixed(1)+","+(cy+26*Math.sin(ha)).toFixed(1));}
+  // Ship shape based on type
+  var shipPts=shipType==="large"?
+    (cx+","+(cy+92)+" "+(cx-10)+","+(cy+112)+" "+(cx-4)+","+(cy+112)+" "+(cx-4)+","+(cy+120)+" "+(cx+4)+","+(cy+120)+" "+(cx+4)+","+(cy+112)+" "+(cx+10)+","+(cy+112)):
+    shipType==="medium"?
+    (cx+","+(cy+92)+" "+(cx-8)+","+(cy+108)+" "+(cx-3)+","+(cy+108)+" "+(cx-3)+","+(cy+115)+" "+(cx+3)+","+(cy+115)+" "+(cx+3)+","+(cy+108)+" "+(cx+8)+","+(cy+108)):
+    (cx+","+(cy+92)+" "+(cx-6)+","+(cy+105)+" "+(cx+6)+","+(cy+105));
+  return(
+    <svg width="100%" viewBox="0 0 300 170" style={{borderRadius:"12px",marginBottom:"12px",display:"block",maxWidth:isTablet?"500px":"100%",marginLeft:"auto",marginRight:"auto"}}>
+      <rect width="300" height="170" fill="#030318" rx="12"/>
+      {stars}
+      {/* Outer glow ring */}
+      <circle cx={cx} cy={cy} r="62" fill="none" stroke={C.purple} strokeWidth="0.6" opacity="0.2"/>
+      <circle cx={cx} cy={cy} r="57" fill="none" stroke={C.blue} strokeWidth="0.5" opacity="0.15" strokeDasharray="4 3"/>
+      {/* W arm */}
+      <rect x={cx-72} y={cy-3} width="46" height="6" fill="#12122e" stroke={C.blue} strokeWidth="0.5" opacity="0.9"/>
+      {/* E arm */}
+      <rect x={cx+26} y={cy-3} width="46" height="6" fill="#12122e" stroke={C.blue} strokeWidth="0.5" opacity="0.9"/>
+      {/* N arm */}
+      <rect x={cx-3} y={cy-68} width="6" height="42" fill="#12122e" stroke={C.blue} strokeWidth="0.5" opacity="0.9"/>
+      {/* S docking arm */}
+      <rect x={cx-3} y={cy+26} width="6" height="60" fill="#12122e" stroke={C.purple} strokeWidth="0.6" opacity="0.9"/>
+      {/* W solar panel */}
+      <rect x={cx-82} y={cy-14} width="12" height="28" fill="#0a1830" stroke={C.blue} strokeWidth="0.8"/>
+      <line x1={cx-76} y1={cy-14} x2={cx-76} y2={cy+14} stroke={C.blue} strokeWidth="0.5" opacity="0.6"/>
+      <line x1={cx-82} y1={cy-5} x2={cx-70} y2={cy-5} stroke={C.blue} strokeWidth="0.4" opacity="0.4"/>
+      <line x1={cx-82} y1={cy+5} x2={cx-70} y2={cy+5} stroke={C.blue} strokeWidth="0.4" opacity="0.4"/>
+      <circle cx={cx-82} cy={cy} r="2.5" fill={C.blue} opacity="0.9"/>
+      {/* E solar panel */}
+      <rect x={cx+70} y={cy-14} width="12" height="28" fill="#0a1830" stroke={C.blue} strokeWidth="0.8"/>
+      <line x1={cx+76} y1={cy-14} x2={cx+76} y2={cy+14} stroke={C.blue} strokeWidth="0.5" opacity="0.6"/>
+      <line x1={cx+70} y1={cy-5} x2={cx+82} y2={cy-5} stroke={C.blue} strokeWidth="0.4" opacity="0.4"/>
+      <line x1={cx+70} y1={cy+5} x2={cx+82} y2={cy+5} stroke={C.blue} strokeWidth="0.4" opacity="0.4"/>
+      <circle cx={cx+82} cy={cy} r="2.5" fill={C.blue} opacity="0.9"/>
+      {/* N cap */}
+      <rect x={cx-7} y={cy-71} width="14" height="5" fill="#1a1248" stroke={C.blue} strokeWidth="0.7" rx="2"/>
+      <circle cx={cx} cy={cy-71} r="1.5" fill={C.red} opacity="0.85"/>
+      {/* Hub ring */}
+      <circle cx={cx} cy={cy} r="32" fill="none" stroke={C.purple} strokeWidth="0.8" opacity="0.3"/>
+      {/* Hub body */}
+      <polygon points={hexPts.join(" ")} fill="#0e0830" stroke={C.purple} strokeWidth="1.5"/>
+      {/* Hub inner details */}
+      <circle cx={cx} cy={cy} r="16" fill="none" stroke={C.purple} strokeWidth="0.6" opacity="0.5"/>
+      <circle cx={cx} cy={cy} r="9" fill="#1a0848" stroke={C.purple} strokeWidth="1"/>
+      <circle cx={cx} cy={cy} r="4" fill={C.purple} opacity="0.9"/>
+      {/* Hub windows */}
+      <circle cx={cx-11} cy={cy-7} r="2.5" fill={C.blue} opacity="0.55"/>
+      <circle cx={cx+11} cy={cy-7} r="2.5" fill={C.blue} opacity="0.55"/>
+      <circle cx={cx} cy={cy+13} r="2.5" fill={C.purple} opacity="0.6"/>
+      {/* Docking collar */}
+      <rect x={cx-9} y={cy+82} width="18" height="7" fill="#1a0840" stroke={C.purple} strokeWidth="1.2" rx="2"/>
+      <circle cx={cx-5} cy={cy+84} r="1.5" fill={C.cyan} opacity="0.9"/>
+      <circle cx={cx+5} cy={cy+84} r="1.5" fill={C.cyan} opacity="0.9"/>
+      {/* Docked ship */}
+      <polygon points={shipPts} fill={shipColor} opacity="0.85"/>
+      <ellipse cx={cx} cy={shipType==="large"?cy+121:shipType==="medium"?cy+116:cy+106} rx="5" ry="2" fill={shipColor} opacity="0.35"/>
+      {/* Ship cockpit highlight */}
+      <circle cx={cx} cy={cy+97} r="2" fill="white" opacity="0.3"/>
+    </svg>
+  );
+}
+
+// ─── STARBASE (tabbed) ───────────────────────────────────────
+function StarbaseView(props){
+  var player=props.player,rover=props.rover,onBuy=props.onBuy,onLeave=props.onLeave,onBuyFuel=props.onBuyFuel,onRepair=props.onRepair,onRepairRover=props.onRepairRover,onBuyNewRover=props.onBuyNewRover,onReloadLaser=props.onReloadLaser,onBuyPod=props.onBuyPod,onBuyShip=props.onBuyShip,onSell=props.onSell;
+  var [tab,setTab]=useState("market");
+  var [shipSub,setShipSub]=useState("purchase");
+  var usedCargo=shipCargoUsed(player),maxCargo=shipCargoMax(player);
+  var cargoPct=maxCargo>0?Math.round((usedCargo/maxCargo)*100):0;
+  var hullDamage=player.maxHull-Math.round(player.hull);
+  var repairCost=hullDamage*2;
+  var currentShip=SHIPS[player.shipType]||SHIPS.small;
+  var canBuyPod=player.cargoPods<currentShip.maxPods;
+  var podCapUpgraded=player.upgrades&&player.upgrades.podCap>=1;
+  var podCap=podCapUpgraded?200:100;
+  var tabBtn=function(key,color){return Object.assign({},bs(tab===key?color:C.dim,true),{padding:"8px 4px",fontSize:px(12)});};
+  var subBtn=function(key,active,color){return Object.assign({},bs(active?color:C.dim,true),{padding:"5px 8px",fontSize:px(11)});};
+  var SYS_SHIP=["shields","weapons","engines","sensors","reactor","hull","podCap"];
+  var SYS_ROVER=["roverChassis","roverSensor","roverLaser","roverCargo"];
+  var COLS={shields:C.blue,weapons:C.red,engines:C.green,sensors:C.cyan,reactor:C.yellow,hull:C.orange,roverChassis:"#cc88ff",roverSensor:"#88ccff",roverLaser:"#ff8888",roverCargo:"#88ffcc",podCap:"#ffcc88"};
+  var LABELS={shields:"Shields",weapons:"Weapons",engines:"Engines",sensors:"Sensors",reactor:"Reactor",hull:"Hull",roverChassis:"Chassis",roverSensor:"Sensor Array",roverLaser:"Laser",roverCargo:"Cargo Bay",podCap:"Pod Capacity"};
+  var SYS_MAX={shields:2,weapons:2,engines:2,sensors:2,reactor:2,hull:2,roverChassis:2,roverSensor:2,roverLaser:2,roverCargo:2,podCap:1};
+
+  function renderUpgradeList(sysList){
+    return sysList.map(function(sys){
+      var maxLv=SYS_MAX[sys]||2;
+      var level=player.upgrades[sys]||0,maxed=level>=maxLv;
+      var upg=maxed?null:UPGRADES[sys][level];
+      var color=COLS[sys];
+      var canAfford=upg?Object.entries(upg.cost).every(function(e){return (e[0]==="credits"?player.credits:(player.resources[e[0]]||0))>=e[1];}):false;
+      return(
+        <div key={sys} style={{background:C.panel,border:"1px solid "+color+"22",borderRadius:"10px",padding:"10px 12px",marginBottom:"6px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:px(13),fontWeight:"700",color:color,letterSpacing:"1px"}}>{LABELS[sys]||sys}</div>
+              <div style={{fontSize:px(12),color:C.dim,marginTop:"2px"}}>Lv {level}/{maxLv} {upg?"• "+upg.desc:"• MAXED"}</div>
+              {upg&&<div style={{fontSize:px(12),marginTop:"2px",display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                {Object.entries(upg.cost).map(function(e){
+                  var resKey=e[0],need=e[1];
+                  var have=resKey==="credits"?player.credits:(player.resources[resKey]||0);
+                  var ok=have>=need;
+                  if(resKey==="credits")return <span key={resKey} style={{fontWeight:"600"}}><span style={{color:C.yellow}}>⌬</span><span style={{color:ok?C.green:C.red}}>{need}</span></span>;
+                  return <span key={resKey} style={{color:ok?C.green:C.red,fontWeight:"600"}}>{need} {resKey}</span>;
+                })}
+              </div>}
+            </div>
+            {!maxed?<button onClick={function(){onBuy(sys);}} style={bs(canAfford?color:C.dim,canAfford)} disabled={!canAfford}>Upgrade</button>:<span style={{fontSize:px(13),color:color}}>★ MAX</span>}
+          </div>
+        </div>
+      );
+    });
+  }
+
+  return(
+    <div>
+      <StationSVG shipType={player.shipType}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+        <div><div style={{fontSize:px(17),fontWeight:"700",color:"#ffffff"}}>⬡ STARBASE</div><div style={{fontSize:px(12),color:C.dim}}>Docked: {currentShip.name}</div></div>
+        <button onClick={onLeave} style={bs(C.dim,true)}>Undock</button>
+      </div>
+
+      {/* Main tabs */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px",marginBottom:"12px"}}>
+        <button onClick={function(){setTab("market");}} style={tabBtn("market",C.yellow)}>⌬ Market</button>
+        <button onClick={function(){setTab("ship");}} style={tabBtn("ship",C.purple)}>🚀 Ship</button>
+        <button onClick={function(){setTab("rover");}} style={tabBtn("rover","#44ddaa")}>🔴 Rover</button>
+      </div>
+
+      {/* ── MARKET ── */}
+      {tab==="market"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+          {/* Buy Fuel */}
+          <div style={{background:C.panel,border:"1px solid "+C.fuel+"33",borderRadius:"10px",padding:"12px"}}>
+            <div style={{fontSize:px(13),fontWeight:"700",color:C.fuel,marginBottom:"4px"}}>Buy Fuel</div>
+            <div style={{fontSize:px(13),color:C.dim,marginBottom:"8px"}}>+20 fuel · <span style={{color:C.yellow}}>⌬</span>30</div>
+            <button onClick={onBuyFuel} style={bs(player.credits>=30?C.fuel:C.dim,player.credits>=30)}>Buy 20 Fuel (⌬30)</button>
+          </div>
+          {/* Sell Cargo */}
+          <div style={{background:C.panel,border:"1px solid "+C.cyan+"22",borderRadius:"10px",padding:"12px"}}>
+            <div style={{fontSize:px(13),fontWeight:"700",color:C.cyan,marginBottom:"8px"}}>Sell Cargo</div>
+            {["metals","crystals","tech","fuel"].map(function(r){
+              var amt=player.resources[r]||0;
+              var rate=SELL_RATES[r]||1;
+              var RES_C={metals:C.orange,crystals:C.blue,tech:C.cyan,fuel:C.fuel};
+              var col=RES_C[r]||C.dim;
+              return(
+                <div key={r} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+                  <span style={{fontSize:px(13),color:col,fontWeight:"600"}}>{r.charAt(0).toUpperCase()+r.slice(1)}: <span style={{color:C.text}}>{amt}</span></span>
+                  <div style={{display:"flex",gap:"5px",flexShrink:0}}>
+                    <button onClick={function(){onSell(r,1);}} style={Object.assign({},bs(amt>0?col:C.dim,amt>0),{padding:"5px 0",fontSize:px(11),width:"64px",textAlign:"center"})} disabled={amt===0}>1 (⌬{rate})</button>
+                    <button onClick={function(){onSell(r,amt);}} style={Object.assign({},bs(amt>0?col:C.dim,amt>0),{padding:"5px 0",fontSize:px(11),width:"72px",textAlign:"center"})} disabled={amt===0}>All (⌬{amt*rate})</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── SHIP ── */}
+      {tab==="ship"&&(
+        <div>
+          {/* Repair + Pod purchase at top */}
+          <div style={{background:C.panel,border:"1px solid "+C.green+"33",borderRadius:"10px",padding:"10px 12px",marginBottom:"6px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:px(13),fontWeight:"700",color:C.green}}>Hull Repair</div>
+              <div style={{fontSize:px(12),color:C.dim,marginTop:"2px"}}>{hullDamage===0?"Fully intact":<span>Damage: {hullDamage} pts · <span style={{color:C.yellow}}>⌬</span>{repairCost}</span>}</div>
+            </div>
+            <button onClick={onRepair} style={bs(hullDamage>0&&player.credits>=repairCost?C.green:C.dim,hullDamage>0&&player.credits>=repairCost)} disabled={hullDamage===0||player.credits<repairCost}>{hullDamage===0?"✓ Intact":"Repair"}</button>
+          </div>
+          <div style={{background:C.panel,border:"1px solid "+C.orange+"22",borderRadius:"10px",padding:"10px 12px",marginBottom:"10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:px(13),fontWeight:"700",color:C.orange}}>Cargo Pod</div>
+              <div style={{fontSize:px(12),color:C.dim,marginTop:"2px"}}>{canBuyPod?<span>{player.cargoPods}/{currentShip.maxPods} pods · <span style={{color:C.yellow}}>⌬</span>100 each</span>:"Max pods reached"}</div>
+            </div>
+            <button onClick={onBuyPod} style={bs(canBuyPod&&player.credits>=100?C.orange:C.dim,canBuyPod&&player.credits>=100)} disabled={!canBuyPod||player.credits<100}>Buy Pod (⌬100)</button>
+          </div>
+          {/* Sub-tabs */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"10px"}}>
+            <button onClick={function(){setShipSub("upgrades");}} style={subBtn("upgrades",shipSub==="upgrades",C.purple)}>Upgrades</button>
+            <button onClick={function(){setShipSub("purchase");}} style={subBtn("purchase",shipSub==="purchase",C.purple)}>New Ships</button>
+          </div>
+          {shipSub==="purchase"&&(
+            <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+              {/* Ships */}
+              <div style={{background:C.panel,border:"1px solid "+C.purple+"22",borderRadius:"10px",padding:"10px 12px",marginBottom:"2px"}}>
+                <div style={{fontSize:px(12),color:C.dim,marginBottom:"6px"}}>Current: {currentShip.name} · Hull {player.maxHull} · {currentShip.maxPods} pod max</div>
+              </div>
+              {["medium","large"].filter(function(k){return k!==player.shipType;}).map(function(key){
+                var ship=SHIPS[key];var cost=ship.cost;
+                var canAfford=cost&&Object.entries(cost).every(function(e){return (e[0]==="credits"?player.credits:(player.resources[e[0]]||0))>=e[1];});
+                return(
+                  <div key={key} style={{background:C.panel,border:"1px solid "+C.purple+"22",borderRadius:"10px",padding:"10px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontSize:px(13),fontWeight:"700",color:"#fff"}}>{ship.name}</div>
+                        <div style={{fontSize:px(12),color:C.dim,marginTop:"2px"}}>Hull {ship.maxHull} · Shields {ship.maxShields} · {ship.maxPods} pods</div>
+                        {cost&&<div style={{fontSize:px(12),marginTop:"2px",display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                          {Object.entries(cost).map(function(e){var have=e[0]==="credits"?player.credits:(player.resources[e[0]]||0);return <span key={e[0]} style={{color:have>=e[1]?C.green:C.red,fontWeight:"600"}}>{e[1]}{e[0]==="credits"?"⌬":" "+e[0]}</span>;})}
+                        </div>}
+                      </div>
+                      <button onClick={function(){onBuyShip(key);}} style={bs(canAfford?C.purple:C.dim,canAfford)} disabled={!canAfford}>Buy</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {shipSub==="upgrades"&&renderUpgradeList(SYS_SHIP)}
+        </div>
+      )}
+
+      {/* ── ROVER ── */}
+      {tab==="rover"&&(
+        <div>
+          {/* Repair + Recharge on one line */}
+          <div style={{fontSize:px(11),color:C.dim,letterSpacing:"2px",marginBottom:"8px"}}>REPAIRS</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"10px"}}>
+            {rover.destroyed?(
+              <div style={{gridColumn:"1/-1",background:C.panel,border:"1px solid "+C.red+"55",borderRadius:"10px",padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:px(13),fontWeight:"700",color:C.red}}>⚠ Rover Destroyed</div>
+                  <div style={{fontSize:px(12),color:C.dim,marginTop:"2px"}}><span style={{color:C.yellow}}>⌬</span>300 to replace</div>
+                </div>
+                <button onClick={onBuyNewRover} style={bs(player.credits>=300?C.orange:C.dim,player.credits>=300)}>New Rover</button>
+              </div>
+            ):(function(){
+              var roverDmg=(rover.maxHull||60)-Math.min(rover.hull||60,rover.maxHull||60);
+              var roverRepairCost=Math.max(10,Math.ceil(roverDmg/(rover.maxHull||60)*150));
+              return(
+                <div style={{background:C.panel,border:"1px solid rgba(100,220,160,0.3)",borderRadius:"10px",padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:px(12),fontWeight:"700",color:"#44ddaa"}}>Rover Repair</div>
+                    <div style={{fontSize:px(11),color:C.dim,marginTop:"2px"}}>{roverDmg===0?"Intact":<span><span style={{color:C.yellow}}>⌬</span>{roverRepairCost}</span>}</div>
+                  </div>
+                  <button onClick={onRepairRover} style={bs(roverDmg>0&&player.credits>=roverRepairCost?"#44ddaa":C.dim,roverDmg>0&&player.credits>=roverRepairCost)} disabled={roverDmg===0||player.credits<roverRepairCost}>{roverDmg===0?"✓":"Repair"}</button>
+                </div>
+              );
+            })()}
+            {!rover.destroyed&&(function(){
+              var shots=rover.maxLaserShots-rover.laserShots;var cost=shots*10;
+              return(
+                <div style={{background:C.panel,border:"1px solid rgba(255,100,100,0.25)",borderRadius:"10px",padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:px(12),fontWeight:"700",color:"#ff8888"}}>Recharge Laser</div>
+                    <div style={{fontSize:px(11),color:C.dim,marginTop:"2px"}}>{shots===0?"Full":<span><span style={{color:C.yellow}}>⌬</span>{cost}</span>}</div>
+                  </div>
+                  <button onClick={onReloadLaser} style={bs(shots>0&&player.credits>=cost?"#ff8888":C.dim,shots>0&&player.credits>=cost)} disabled={shots===0||player.credits<cost}>{shots===0?"✓":"Recharge"}</button>
+                </div>
+              );
+            })()}
+          </div>
+          {/* Rover upgrades label */}
+          <div style={{fontSize:px(11),color:C.dim,letterSpacing:"2px",marginBottom:"8px"}}>UPGRADES</div>
+          {renderUpgradeList(SYS_ROVER)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WinView(props){return(<div style={{textAlign:"center",padding:"40px 20px"}}><div style={{fontSize:px(40),marginBottom:"16px"}}>🌟</div><div style={{fontSize:px(22),fontWeight:"700",color:C.yellow,letterSpacing:"3px",marginBottom:"8px"}}>ARTIFACTS SECURED</div><div style={{fontSize:px(13),color:C.dim,lineHeight:"1.8",marginBottom:"28px"}}>All 6 fragments united.<br/>The ancient machine awakens.<br/>The void remembers your name.</div><button onClick={props.onRestart} style={Object.assign({},bs(C.yellow,true),{fontSize:px(14),padding:"14px 32px"})}>New Run</button></div>);}
+function DeadView(props){return(<div style={{textAlign:"center",padding:"40px 20px"}}><div style={{fontSize:px(40),marginBottom:"16px"}}>💀</div><div style={{fontSize:px(22),fontWeight:"700",color:C.red,letterSpacing:"3px",marginBottom:"8px"}}>SHIP DESTROYED</div><div style={{fontSize:px(13),color:C.dim,lineHeight:"1.8",marginBottom:"28px"}}>Emergency beacon activated.<br/>Respawning at last starbase.<br/>Resources halved as penalty.</div><button onClick={props.onRespawn} style={Object.assign({},bs(C.red,true),{fontSize:px(14),padding:"14px 32px"})}>Respawn</button></div>);}
+
+// ─── ROOT ────────────────────────────────────────────────────
+function VoidAtlas(){
+  var [S,setS]=useState(makeState);
+  var [confirmRestart,setConfirmRestart]=useState(false);
+  var [saveStatus,setSaveStatus]=useState("checking");
+  var didLoad=useRef(false);
+
+  // iOS meta tags handled in HTML head
+
+  useEffect(function(){
+    try{
+      var saved=localStorage.getItem("voidAtlasSave");
+      if(saved){
+        var state=JSON.parse(saved);
+        // Invalidate saves from old 18-system galaxy (new format has GW*GH=35 systems)
+        var expectedCount=GW*GH;
+        if(!state.systems||state.systems.length!==expectedCount||state.systems[0].blackhole===undefined){
+          localStorage.removeItem("voidAtlasSave");
+          setSaveStatus("ok");
+          didLoad.current=true;
+          return;
+        }
+        if(state.view==="surface"||state.view==="combat"){
+          state.view=state.orbitSystemId!=null?"solar_system":"galaxy";
+        }
+        if(!state.player||!state.systems||!Array.isArray(state.systems)){
+          setSaveStatus("ok");
+          didLoad.current=true;
+          return;
+        }
+        state.log=["◉ Session resumed.",...(state.log||[])].slice(0,30);
+        setS(state);
+      }
+      setSaveStatus("ok");
+    }catch(e){setSaveStatus("err");}
+    didLoad.current=true;
+  },[]);
+
+  useEffect(function(){
+    var timer=setTimeout(function(){
+      if(!didLoad.current||saveStatus==="err")return;
+      try{
+        var toSave=Object.assign({},S,{
+          surface:null,
+          systems:S.systems.map(function(sys){
+            return Object.assign({},sys,{planets:sys.planets.map(function(p){
+              // Keep roverX/roverY but strip large grid to save space; keep full grid only for orbitPlanetId
+              if(p.savedSurface&&p.savedSurface.grid&&p.id!==S.orbitPlanetId){
+                return Object.assign({},p,{savedSurface:{roverX:p.savedSurface.roverX,roverY:p.savedSurface.roverY}});
+              }
+              return p;
+            })});
+          })
+        });
+        localStorage.setItem("voidAtlasSave",JSON.stringify(toSave));
+      }catch(e){}
+    },1000);
+    return function(){clearTimeout(timer);};
+  },[S]);
+
+  function handleRestart(){
+    try{localStorage.removeItem("voidAtlasSave");}catch(e){}
+    didLoad.current=true;
+    setS(makeState());
+    setConfirmRestart(false);
+  }
+
+  function upd(fn){setS(function(prev){return Object.assign({},fn(prev));});}
+
+  function handleCellTap(targetId){upd(function(s){
+    if(targetId===s.currentSystemId)return Object.assign({},s,{view:"solar_system"});
+    var target=s.systems.find(function(sys){return sys.id===targetId;});
+    if(!target)return s;
+    // Check adjacency separately (isReachable blocks black holes, so we check range directly)
+    var cur2=s.systems.find(function(sys){return sys.id===s.currentSystemId;});
+    if(!cur2)return s;
+    var withinRange=Math.abs(target.x-cur2.x)<=s.player.engineRange&&Math.abs(target.y-cur2.y)<=s.player.engineRange;
+    if(!withinRange)return s;
+    // Revealed black hole — do nothing
+    if(target.blackhole&&target.revealed)return s;
+    // Unrevealed black hole — reveal it, stay put, no fuel
+    if(target.blackhole&&!target.revealed){
+      var systems0=s.systems.map(function(sys){return sys.id===targetId?Object.assign({},sys,{revealed:true}):sys;});
+      return Object.assign({},s,{systems:systems0,log:["⚫ Black hole — impassable.",...s.log].slice(0,30)});
+    }
+    // Regular system — travel there (costs fuel)
+    if(s.player.resources.fuel<5)return Object.assign({},s,{log:["Not enough fuel!",...s.log].slice(0,30)});
+    var systems=s.systems.map(function(sys){return sys.id===targetId?Object.assign({},sys,{explored:true,revealed:true}):sys;});
+    var target2=systems.find(function(sys){return sys.id===targetId;});
+    var newPlayer=Object.assign({},s.player,{resources:Object.assign({},s.player.resources,{fuel:s.player.resources.fuel-5})});
+    if(target2.enemies&&target2.enemies.length>0){
+      var envRoll=Math.random();var env=envRoll<0.2?"nebula":envRoll<0.5?"asteroids":"normal";
+      var enemy=Object.assign({},target2.enemies[0]);
+      var envMsg=env==="nebula"?"⚡ Nebula!":env==="asteroids"?"☄ Asteroids!":"";
+      var clog=envMsg?[envMsg,enemy.name+" intercepts!"]:[enemy.name+" intercepts!"];
+      return Object.assign({},s,{systems:systems,currentSystemId:targetId,player:newPlayer,view:"combat",combat:{enemy:enemy,env:env,combatLog:clog},log:["Combat in "+target2.name+"!",...s.log].slice(0,30)});
+    }
+    var artifacts=newPlayer.artifacts;
+    var finalSystems=systems.map(function(sys){if(sys.id===targetId&&sys.artifactFragment&&!sys.artifactCollected){artifacts++;return Object.assign({},sys,{artifactCollected:true});}return sys;});
+    var finalPlayer=Object.assign({},newPlayer,{artifacts:artifacts});
+    if(artifacts>=6)return Object.assign({},s,{systems:finalSystems,currentSystemId:targetId,player:finalPlayer,view:"win"});
+    var artMsg=artifacts>newPlayer.artifacts?"★ ARTIFACT "+artifacts+"/6 RECOVERED!":null;
+    return Object.assign({},s,{systems:finalSystems,currentSystemId:targetId,player:finalPlayer,view:"solar_system",log:[artMsg||"Arrived at "+target2.name+".",...s.log].slice(0,30)});
+  });}
+
+  function handleCombatAction(action){upd(function(s){
+    if(!s.combat)return s;
+    var combat=s.combat,player=s.player,enemy=combat.enemy,env=combat.env;
+    var inNebula=env==="nebula",inAsteroids=env==="asteroids";
+    var log=[...combat.combatLog];var ne=Object.assign({},enemy),np=Object.assign({},player);
+    if(action==="flee"){
+      var chance=0.35+player.power.engines*0.06;
+      if(Math.random()<chance)return Object.assign({},s,{combat:null,view:"solar_system",log:["Escaped!",...s.log].slice(0,30)});
+      var hit=Math.max(1,enemy.atk-(inNebula?0:player.power.shields*4));
+      if(!inNebula){var sh=Math.min(np.shields,hit);np.shields=Math.max(0,np.shields-sh);np.hull-=Math.max(0,hit-sh);}else{np.hull-=hit;}
+      log=["Flee failed! "+hit+" dmg!",...log];
+      if(np.hull<=0)return Object.assign({},s,{player:np,combat:null,view:"dead"});
+      return Object.assign({},s,{player:np,combat:Object.assign({},combat,{combatLog:log})});
+    }
+    var dmg=player.weaponDmg+player.power.weapons*3;
+    if(action==="laser")dmg=Math.floor(dmg*0.85);
+    var blocked=false;
+    if(action==="missile"&&inAsteroids&&Math.random()<0.4){blocked=true;dmg=0;log=["☄ Missile blocked!",...log];}
+    if(!blocked){var sd=Math.min(ne.shields,dmg);ne.shields-=sd;ne.hull-=(dmg-sd);log=[(action==="laser"?"🔵 Laser":"🚀 Missile")+" hits "+dmg+"!",...log];}
+    if(ne.hull<=0){
+      var rew=enemy.reward||{};var newRes=Object.assign({},player.resources);
+      Object.entries(rew).forEach(function(e){if(e[0]!=="credits"&&newRes[e[0]]!==undefined)newRes[e[0]]+=e[1];});
+      var systems2=s.systems.map(function(sys){return sys.id===s.currentSystemId?Object.assign({},sys,{enemies:sys.enemies.slice(1)}):sys;});
+      var arts=player.artifacts;
+      var fs2=systems2.map(function(sys){if(sys.id===s.currentSystemId&&sys.artifactFragment&&!sys.artifactCollected){arts++;return Object.assign({},sys,{artifactCollected:true});}return sys;});
+      var fp=Object.assign({},player,{resources:newRes,credits:player.credits+(rew.credits||0),artifacts:arts});
+      if(arts>=6)return Object.assign({},s,{systems:fs2,player:fp,combat:null,view:"win"});
+      var rem=fs2.find(function(sys){return sys.id===s.currentSystemId;}).enemies;
+      if(rem.length>0){var nxt=Object.assign({},rem[0]);return Object.assign({},s,{systems:fs2,player:fp,combat:Object.assign({},combat,{enemy:nxt,combatLog:[enemy.name+" destroyed! Next: "+nxt.name+"!",...log]})});}
+      var am=arts>player.artifacts?" ★ ARTIFACT "+arts+"/6!":"";
+      return Object.assign({},s,{systems:fs2,player:fp,combat:null,view:"solar_system",log:[enemy.name+" destroyed! +"+(rew.credits||0)+"cr."+am,...s.log].slice(0,30)});
+    }
+    var hit2=Math.max(1,ne.atk-(inNebula?0:player.power.shields*4));
+    if(!inNebula){var sh2=Math.min(np.shields,hit2);np.shields=Math.max(0,np.shields-sh2);np.hull-=Math.max(0,hit2-sh2);}else{np.hull-=hit2;}
+    log=[enemy.name+" fires! "+hit2+" hull dmg!",...log];
+    if(np.hull<=0)return Object.assign({},s,{player:np,combat:null,view:"dead"});
+    return Object.assign({},s,{player:np,combat:Object.assign({},combat,{enemy:ne,combatLog:log})});
+  });}
+
+  function adjustPower(key,delta){upd(function(s){
+    var p=Object.assign({},s.player.power),others=Object.keys(p).filter(function(k){return k!==key;});
+    if(delta>0){var donor=others.find(function(k){return p[k]>0;});if(!donor)return s;p[key]++;p[donor]--;}
+    else{if(p[key]<=0)return s;var recip=others.find(function(k){return p[k]<s.player.reactorMax-2;});if(!recip)return s;p[key]--;p[recip]++;}
+    return Object.assign({},s,{player:Object.assign({},s.player,{power:p})});
+  });}
+
+  function handleOrbitPlanet(planetId){upd(function(s){return Object.assign({},s,{view:"orbit",orbitPlanetId:planetId,orbitSystemId:s.currentSystemId});});}
+
+  function handleScan(){upd(function(s){
+    var sys=s.systems.find(function(sys){return sys.id===s.orbitSystemId;});if(!sys)return s;
+    var planet=sys.planets.find(function(p){return p.id===s.orbitPlanetId;});if(!planet||planet.scanned)return s;
+    var systems=s.systems.map(function(sys2){return sys2.id===s.orbitSystemId?Object.assign({},sys2,{planets:sys2.planets.map(function(p){return p.id===s.orbitPlanetId?Object.assign({},p,{scanned:true}):p;})}):sys2;});
+    var anomBonus=planet.anomaly?200:0;
+    var newPlayer=anomBonus>0?Object.assign({},s.player,{credits:s.player.credits+anomBonus}):s.player;
+    var newLog=anomBonus>0?["⚠ Anomaly signature confirmed! Scientific data sold. +⌬200",...s.log].slice(0,30):s.log;
+    return Object.assign({},s,{systems:systems,player:newPlayer,log:newLog});
+  });}
+
+  function handleLand(){upd(function(s){
+    if(s.rover.destroyed)return Object.assign({},s,{log:["Rover destroyed — buy a new one at a Starbase.",...s.log].slice(0,30)});
+    var LAND_FUEL=5;
+    var MIN_LAND_FUEL=LAND_FUEL+10; // need enough for landing AND liftoff
+    if((s.player.resources.fuel||0)<MIN_LAND_FUEL)return Object.assign({},s,{log:["Need "+MIN_LAND_FUEL+" fuel to land safely (5 land + 10 liftoff).",...s.log].slice(0,30)});
+    var sys=s.systems.find(function(sys){return sys.id===s.orbitSystemId;});if(!sys)return s;
+    var planet=sys.planets.find(function(p){return p.id===s.orbitPlanetId;});if(!planet)return s;
+    var grid,surfaceStats,landMsg,startX=10,startY=10;
+    if(planet.savedSurface&&planet.savedSurface.grid){
+      grid=planet.savedSurface.grid.map(function(row){return row.map(function(t){return Object.assign({},t);});});
+      startX=planet.savedSurface.roverX!=null?planet.savedSurface.roverX:10;
+      startY=planet.savedSurface.roverY!=null?planet.savedSurface.roverY:10;
+      grid=revealAround(grid,startX,startY,s.rover.sensorRadius);
+      surfaceStats=planet.surfaceStats;
+      landMsg="Returned to "+planet.name+". (-"+LAND_FUEL+" fuel)";
+    } else {
+      grid=generateSurface(s.orbitSystemId,s.orbitPlanetId,planet.type);
+      grid=revealAround(grid,10,10,s.rover.sensorRadius);
+      var totalRes=0,totalRuins=0;
+      grid.forEach(function(row){row.forEach(function(t){if(t.resource)totalRes++;if(t.ruin)totalRuins++;});});
+      surfaceStats={totalRes:totalRes,collectedRes:0,totalRuins:totalRuins,lootedRuins:0,surfaceBonus:false};
+      landMsg="Landed on "+planet.name+". "+totalRes+" resources, "+totalRuins+" ruins. (-"+LAND_FUEL+" fuel)";
+    }
+    var newPlayer=Object.assign({},s.player,{resources:Object.assign({},s.player.resources,{fuel:(s.player.resources.fuel||0)-LAND_FUEL})});
+    var systems=s.systems.map(function(sys2){
+      if(sys2.id!==s.orbitSystemId)return sys2;
+      return Object.assign({},sys2,{planets:sys2.planets.map(function(p){return p.id===s.orbitPlanetId?Object.assign({},p,{surfaceStats:surfaceStats}):p;})});
+    });
+    var newRover=Object.assign({},s.rover,{energy:s.rover.maxEnergy||roverMaxEnergy(s.rover.chassisLevel||0)});
+    return Object.assign({},s,{view:"surface",systems:systems,surface:{grid:grid,roverX:startX,roverY:startY,moveTick:0},player:newPlayer,rover:newRover,surfaceLog:[landMsg]});
+  });}
+
+  function handleRoverMove(tx,ty){upd(function(s){
+    if(!s.surface)return s;
+    var grid=s.surface.grid.map(function(row){return row.map(function(t){return Object.assign({},t);});});
+    var destTerrain=TERRAIN[grid[ty][tx].type]||TERRAIN.plains;
+    var energyCost=TERRAIN_ENERGY[grid[ty][tx].type]||1;
+    var curEnergy=(s.rover.energy!==undefined&&s.rover.energy!==null)?s.rover.energy:(s.rover.maxEnergy||100);
+    if(curEnergy<=0)return Object.assign({},s,{surfaceLog:["Rover out of power! Lift off.",...s.surfaceLog].slice(0,10)});
+    var messages=[];var newPlayer=Object.assign({},s.player,{resources:Object.assign({},s.player.resources)});
+    var newRover=Object.assign({},s.rover,{cargo:Object.assign({},s.rover.cargo),energy:Math.max(0,curEnergy-energyCost)});
+    var systems=s.systems.map(function(sys){return Object.assign({},sys,{planets:sys.planets.map(function(p){return Object.assign({},p);})});});
+
+    // Helper: update planet stats
+    function updatePlanetStats(fn){
+      systems=systems.map(function(sys){
+        if(sys.id!==s.orbitSystemId)return sys;
+        var newPlanets=sys.planets.map(function(p){
+          if(p.id!==s.orbitPlanetId)return p;
+          var st=Object.assign({},p.surfaceStats||{});
+          fn(st);
+          return Object.assign({},p,{surfaceStats:st});
+        });
+        return Object.assign({},sys,{planets:newPlanets});
+      });
+    }
+
+    var tile=grid[ty][tx];
+    // Collect resource → rover cargo (blocked if ship cargo would overflow)
+    if(tile.resource){
+      var amt=tile.resourceAmt||10;
+      var roverSpace=newRover.cargoMax-roverCargoUsed(newRover);
+      var isFuel=tile.resource==="fuel";
+      // For non-fuel: also check ship has room (rover cargo transfers to ship on lift-off)
+      var roverNonFuelNow=(newRover.cargo.metals||0)+(newRover.cargo.crystals||0)+(newRover.cargo.tech||0);
+      var shipAvail=isFuel?9999:shipCargoMax(s.player)-shipCargoUsed(s.player)-roverNonFuelNow;
+      var effectiveSpace=Math.min(roverSpace,shipAvail);
+      if(effectiveSpace>0){
+        var take=Math.min(amt,effectiveSpace);
+        newRover.cargo[tile.resource]=(newRover.cargo[tile.resource]||0)+take;
+        messages.push("Collected "+take+" "+tile.resource+".");
+        tile.resource=null;tile.resourceAmt=0;grid[ty][tx]=tile;
+        updatePlanetStats(function(st){st.collectedRes=Math.min((st.collectedRes||0)+1,st.totalRes||1);if(st.collectedRes===st.totalRes){messages.unshift("★ All resources collected! +⌬100 bonus!");newPlayer.credits+=100;}});
+      } else if(roverSpace<=0){
+        messages.push("Rover cargo full — lift off to transfer.");
+      } else {
+        messages.push("Ship cargo full — sell resources at a starbase first.");
+      }
+    }
+    // Ruin
+    if(tile.ruin&&!tile.ruinLooted){
+      var rr=RUIN_REWARDS[Math.floor(Math.random()*RUIN_REWARDS.length)];
+      messages.push("RUIN: "+rr.text);tile.ruinLooted=true;grid[ty][tx]=tile;
+      if(rr.bonus)Object.entries(rr.bonus).forEach(function(e){if(e[0]==="credits")newPlayer.credits+=e[1];else if(e[0]==="fuel")newPlayer.resources.fuel+=e[1];else{var rc=newRover.cargo;rc[e[0]]=(rc[e[0]]||0)+e[1];}});
+      if(rr.laserBonus){newRover.maxLaserShots=(newRover.maxLaserShots||3)+rr.laserBonus;newRover.laserShots=newRover.maxLaserShots;}
+      updatePlanetStats(function(st){st.lootedRuins=Math.min((st.lootedRuins||0)+1,st.totalRuins||1);if(st.lootedRuins===st.totalRuins&&st.totalRuins>0){messages.unshift("★ All ruins discovered! +⌬150 bonus!");newPlayer.credits+=150;}});
+    }
+
+    var revealed3=revealAround(grid,tx,ty,s.rover.sensorRadius);
+
+    // Toxic planet acid damage
+    var toxSys=s.systems.find(function(ss){return ss.id===s.orbitSystemId;});
+    var toxPlanet=toxSys?toxSys.planets.find(function(p){return p.id===s.orbitPlanetId;}):null;
+    if(toxPlanet&&toxPlanet.type==="Toxic"&&tile.type==="ocean"){
+      newRover.hull=Math.max(1,(newRover.hull||60)-3);
+      if(newRover.hull<=15)messages.push("⚠ Acid pool! Hull critical: "+Math.round(newRover.hull));
+      else messages.push("Acid pool corrodes hull! -3 hull.");
+    }
+
+    // Creature movement & attacks
+    var damage=0;var dmgMsg=[];var moves=[];
+    for(var my=0;my<20;my++){for(var mx=0;mx<20;mx++){
+      var mt=revealed3[my][mx];if(!mt.creature||!mt.revealed)continue;
+      var ct=mt.creatureType||"normal";
+      var dist=Math.sqrt((tx-mx)*(tx-mx)+(ty-my)*(ty-my));
+      var movesToward=ct==="aggressive"||(ct==="normal"&&dist<=5);
+      if(ct==="passive"&&Math.random()<0.15){var wdirs=[[0,1],[0,-1],[1,0],[-1,0]];var wd=wdirs[Math.floor(Math.random()*4)];var wnx=mx+wd[0],wny=my+wd[1];if(wnx>=0&&wnx<20&&wny>=0&&wny<20&&!revealed3[wny][wnx].creature&&!revealed3[wny][wnx].ruin)moves.push({fx:mx,fy:my,tx:wnx,ty:wny,creatureType:ct});}
+      else if(movesToward){
+        var ddx=tx>mx?1:tx<mx?-1:0,ddy=ty>my?1:ty<my?-1:0;
+        var nmx=mx+ddx,nmy=my+ddy;
+        if(nmx===tx&&nmy===ty){if(ct==="aggressive"){damage+=10;dmgMsg.push("Aggressive creature attacks! -10 hull.");}else{damage+=6;dmgMsg.push("Creature attacks! -6 hull.");}}
+        else if(nmx>=0&&nmx<20&&nmy>=0&&nmy<20&&!revealed3[nmy][nmx].creature&&!revealed3[nmy][nmx].ruin)moves.push({fx:mx,fy:my,tx:nmx,ty:nmy,creatureType:ct});
+      }
+    }}
+    moves.forEach(function(m){revealed3[m.fy][m.fx]=Object.assign({},revealed3[m.fy][m.fx],{creature:false,creatureType:null});revealed3[m.ty][m.tx]=Object.assign({},revealed3[m.ty][m.tx],{creature:true,creatureType:m.creatureType});});
+    var newHull=Math.max(0,newRover.hull-damage);newRover.hull=newHull;
+
+    if(newHull<=0){
+      // Rover destroyed — forced liftoff, lose cargo, save surface progress
+      var savedGrid2=revealed3.map(function(row){return row.map(function(t){return Object.assign({},t);});});
+      var crashSystems=systems.map(function(sys){
+        if(sys.id!==s.orbitSystemId)return sys;
+        return Object.assign({},sys,{planets:sys.planets.map(function(p){
+          return p.id!==s.orbitPlanetId?p:Object.assign({},p,{savedSurface:{grid:savedGrid2,roverX:tx,roverY:ty}});
+        })});
+      });
+      var deadRover=Object.assign({},newRover,{hull:0,destroyed:true,cargo:{metals:0,crystals:0,fuel:0,tech:0}});
+      return Object.assign({},s,{player:newPlayer,rover:deadRover,systems:crashSystems,surface:null,surfaceLog:[],view:"orbit",log:["⚠ Rover destroyed! Cargo lost. Buy a new rover at a Starbase.",...s.log].slice(0,30)});
+    }
+
+    // Check surface reveal bonus — all passable tiles revealed
+    var currentPlanet=systems.find(function(sys){return sys.id===s.orbitSystemId;});
+    currentPlanet=currentPlanet?currentPlanet.planets.find(function(p){return p.id===s.orbitPlanetId;}):null;
+    if(currentPlanet&&currentPlanet.surfaceStats&&!currentPlanet.surfaceStats.surfaceBonus){
+      var totalPass=0,revealedPass=0;
+      revealed3.forEach(function(row){row.forEach(function(t){var ter=TERRAIN[t.type]||TERRAIN.plains;if(ter.passable<=s.rover.chassisLevel){totalPass++;if(t.revealed)revealedPass++;}});});
+      if(totalPass>0&&revealedPass>=totalPass){
+        messages.unshift("★ All passable terrain revealed! +⌬200 bonus!");
+        newPlayer.credits+=200;
+        updatePlanetStats(function(st){st.surfaceBonus=true;});
+      }
+    }
+
+    if(newRover.energy<=10&&newRover.energy>0)messages.push("⚡ Low power! "+newRover.energy+"% remaining.");
+    if(newRover.energy<=0)messages.push("⚡ Rover out of power! Lift off to abandon.");
+    var allMsgs=[...messages,...dmgMsg,...s.surfaceLog].slice(0,10);
+    return Object.assign({},s,{player:newPlayer,rover:newRover,systems:systems,surface:Object.assign({},s.surface,{grid:revealed3,roverX:tx,roverY:ty}),surfaceLog:allMsgs});
+  });}
+
+  function handleLaser(tx,ty){upd(function(s){
+    if(!s.surface||s.rover.laserShots<=0)return s;
+    var grid=s.surface.grid.map(function(row){return row.map(function(t){return Object.assign({},t);});});
+    var tile=grid[ty][tx];
+    if(!tile.creature)return s;
+    var newRover=Object.assign({},s.rover,{laserShots:s.rover.laserShots-1});
+    var hp=Math.max(0,(tile.creatureHp||1)-1);
+    if(hp>0){
+      grid[ty][tx]=Object.assign({},tile,{creatureHp:hp});
+      var hpMsg=tile.creatureType==="aggressive"?"🔴 Aggressive creature wounded! ("+hp+" HP) "+newRover.laserShots+" shots left.":"Creature hit! "+newRover.laserShots+" shots left.";
+      return Object.assign({},s,{rover:newRover,surface:Object.assign({},s.surface,{grid:grid}),surfaceLog:[hpMsg,...s.surfaceLog].slice(0,10)});
+    }
+    grid[ty][tx]=Object.assign({},tile,{creature:false,creatureType:null,creatureHp:0});
+    return Object.assign({},s,{rover:newRover,surface:Object.assign({},s.surface,{grid:grid}),surfaceLog:["Creature eliminated. "+newRover.laserShots+" shots left.",...s.surfaceLog].slice(0,10)});
+  });}
+
+  function handleLiftoff(){upd(function(s){
+    var LIFTOFF_FUEL=10;
+    if((s.player.resources.fuel||0)<LIFTOFF_FUEL)return Object.assign({},s,{surfaceLog:["Not enough fuel to lift off! Need "+LIFTOFF_FUEL+".",...s.surfaceLog].slice(0,10)});
+    var roverDead=(s.rover.energy||0)<=0;
+    var newPlayer=Object.assign({},s.player,{resources:Object.assign({},s.player.resources)});
+    newPlayer.resources.fuel=(newPlayer.resources.fuel||0)-LIFTOFF_FUEL;
+    var msgs=[];
+    if(!roverDead){
+      var rc=s.rover.cargo;
+      var maxCargo=shipCargoMax(s.player);var usedCargo=shipCargoUsed(s.player);var space=maxCargo-usedCargo;
+      var cargoTypes=["metals","crystals","tech"];var transferred=0;
+      cargoTypes.forEach(function(k){var amt=rc[k]||0;if(amt>0){var take=Math.min(amt,space-transferred);if(take>0){newPlayer.resources[k]=(newPlayer.resources[k]||0)+take;transferred+=take;}}});
+      if(rc.fuel>0)newPlayer.resources.fuel=(newPlayer.resources.fuel||0)+(rc.fuel||0);
+      var totalRoverCargo=(rc.metals||0)+(rc.crystals||0)+(rc.tech||0);
+      if(totalRoverCargo>transferred)msgs.push("Ship cargo full! "+(totalRoverCargo-transferred)+" units lost.");
+      else msgs.push("Lifted off (-"+LIFTOFF_FUEL+" fuel). Cargo transferred.");
+    } else {
+      msgs.push("Rover out of power — abandoned on surface. Cargo lost.");
+    }
+    var savedGrid=s.surface?s.surface.grid.map(function(row){return row.map(function(t){return Object.assign({},t);});}):null;
+    var savedRoverX=s.surface?s.surface.roverX:10;
+    var savedRoverY=s.surface?s.surface.roverY:10;
+    var systems=s.systems.map(function(sys){
+      if(sys.id!==s.orbitSystemId)return sys;
+      return Object.assign({},sys,{planets:sys.planets.map(function(p){
+        if(p.id!==s.orbitPlanetId)return p;
+        return Object.assign({},p,{savedSurface:savedGrid?{grid:savedGrid,roverX:savedRoverX,roverY:savedRoverY}:null});
+      })});
+    });
+    var newRover=Object.assign({},s.rover,{cargo:{metals:0,crystals:0,fuel:0,tech:0},destroyed:roverDead});
+    return Object.assign({},s,{view:"orbit",surface:null,surfaceLog:[],player:newPlayer,rover:newRover,systems:systems,log:[msgs[0]||"Lifted off.",...s.log].slice(0,30)});
+  });}
+
+  function buyUpgrade(sys){upd(function(s){
+    var SYS_MAX={shields:2,weapons:2,engines:2,sensors:2,reactor:2,hull:2,roverChassis:2,roverSensor:2,roverLaser:2,roverCargo:2,podCap:1};
+    var level=s.player.upgrades[sys]||0;if(level>=(SYS_MAX[sys]||2))return s;
+    var upg=UPGRADES[sys][level];
+    for(var i=0;i<Object.entries(upg.cost).length;i++){var e=Object.entries(upg.cost)[i];if((e[0]==="credits"?s.player.credits:(s.player.resources[e[0]]||0))<e[1])return s;}
+    var newRes=Object.assign({},s.player.resources);var cr=s.player.credits;
+    Object.entries(upg.cost).forEach(function(e){if(e[0]==="credits")cr-=e[1];else newRes[e[0]]-=e[1];});
+    var newUpgrades=Object.assign({},s.player.upgrades);
+    newUpgrades[sys]=level+1;
+    var np=Object.assign({},s.player,{resources:newRes,credits:cr,upgrades:newUpgrades});
+    var nr=Object.assign({},s.rover);
+    if(sys==="shields"){np.maxShields+=25;np.shields=Math.min(np.shields+25,np.maxShields);}
+    else if(sys==="weapons")np.weaponDmg+=10;
+    else if(sys==="engines")np.engineRange+=1;
+    else if(sys==="sensors")np.sensorRange+=1;
+    else if(sys==="reactor"){np.reactorMax+=2;np.power=Object.assign({},np.power,{weapons:np.power.weapons+1,shields:np.power.shields+1});}
+    else if(sys==="hull"){if(level===1)np.maxHull+=25;np.hull=Math.min(np.hull+40,np.maxHull);}
+    else if(sys==="roverChassis"){nr.chassisLevel=level+1;nr.maxHull=roverMaxHull(level+1);nr.hull=nr.maxHull;nr.maxEnergy=roverMaxEnergy(level+1);nr.destroyed=false;}
+    else if(sys==="podCap"){np.upgrades=Object.assign({},np.upgrades,{podCap:1});}
+    else if(sys==="roverSensor")nr.sensorRadius+=1;
+    else if(sys==="roverLaser"){nr.maxLaserShots+=(level===0?3:5);nr.laserShots=nr.maxLaserShots;}
+    else if(sys==="roverCargo")nr.cargoMax+=(level===0?20:30);
+    return Object.assign({},s,{player:np,rover:nr,log:[sys.toUpperCase()+" Lv "+(level+1)+".",...s.log].slice(0,30)});
+  });}
+
+  function buyFuel(){upd(function(s){if(s.player.credits<30)return s;return Object.assign({},s,{player:Object.assign({},s.player,{credits:s.player.credits-30,resources:Object.assign({},s.player.resources,{fuel:(s.player.resources.fuel||0)+20})})});});}
+  function reloadLaser(){upd(function(s){
+    var shots=s.rover.maxLaserShots-s.rover.laserShots;
+    var cost=shots*10;
+    if(shots<=0||s.player.credits<cost)return s;
+    return Object.assign({},s,{rover:Object.assign({},s.rover,{laserShots:s.rover.maxLaserShots}),player:Object.assign({},s.player,{credits:s.player.credits-cost}),log:["Laser reloaded.",...s.log].slice(0,30)});
+  });}
+  function repairRover(){upd(function(s){
+    var dmg=s.rover.maxHull-s.rover.hull;
+    var cost=Math.max(10,Math.ceil(dmg/s.rover.maxHull*150));
+    if(dmg<=0||s.player.credits<cost)return s;
+    return Object.assign({},s,{rover:Object.assign({},s.rover,{hull:s.rover.maxHull}),player:Object.assign({},s.player,{credits:s.player.credits-cost})});
+  });}
+  function buyNewRover(){upd(function(s){
+    if(!s.rover.destroyed||s.player.credits<300)return s;
+    return Object.assign({},s,{rover:Object.assign({},s.rover,{hull:s.rover.maxHull,destroyed:false,cargo:{metals:0,crystals:0,fuel:0,tech:0}}),player:Object.assign({},s.player,{credits:s.player.credits-300}),log:["New rover purchased.",...s.log].slice(0,30)});
+  });}
+  function repairShip(){upd(function(s){var dmg=s.player.maxHull-Math.round(s.player.hull);var cost=dmg*2;if(dmg<=0||s.player.credits<cost)return s;return Object.assign({},s,{player:Object.assign({},s.player,{hull:s.player.maxHull,credits:s.player.credits-cost})});});}
+  function buyCargoPod(){upd(function(s){
+    var currentShip=SHIPS[s.player.shipType]||SHIPS.small;
+    if(s.player.cargoPods>=currentShip.maxPods||s.player.credits<100)return s;
+    return Object.assign({},s,{player:Object.assign({},s.player,{cargoPods:s.player.cargoPods+1,credits:s.player.credits-100})});
+  });}
+  function buyShip(shipKey){upd(function(s){
+    var ship=SHIPS[shipKey];if(!ship||!ship.cost)return s;
+    for(var i=0;i<Object.entries(ship.cost).length;i++){var e=Object.entries(ship.cost)[i];if((e[0]==="credits"?s.player.credits:(s.player.resources[e[0]]||0))<e[1])return s;}
+    var newRes=Object.assign({},s.player.resources);var cr=s.player.credits;
+    Object.entries(ship.cost).forEach(function(e){if(e[0]==="credits")cr-=e[1];else newRes[e[0]]-=e[1];});
+    var newPods=Math.min(s.player.cargoPods,ship.maxPods);
+    var np=Object.assign({},s.player,{resources:newRes,credits:cr,shipType:shipKey,maxHull:ship.maxHull,hull:ship.maxHull,maxShields:ship.maxShields,shields:ship.maxShields,cargoPods:newPods});
+    return Object.assign({},s,{player:np,log:[ship.name+" purchased!",...s.log].slice(0,30)});
+  });}
+  function sellCargo(resType,qty){upd(function(s){
+    var have=s.player.resources[resType]||0;
+    var sellAmt=qty!==undefined?Math.min(qty,have):have;
+    if(sellAmt<=0)return s;
+    var earned=sellAmt*(SELL_RATES[resType]||1);
+    var newRes=Object.assign({},s.player.resources);
+    newRes[resType]=have-sellAmt;
+    return Object.assign({},s,{player:Object.assign({},s.player,{resources:newRes,credits:s.player.credits+earned}),log:["Sold "+sellAmt+" "+resType+" for "+earned+"⌬.",...s.log].slice(0,30)});
+  });}
+  function respawn(){upd(function(s){return Object.assign({},s,{view:"solar_system",currentSystemId:s.lastStarbaseId,combat:null,surface:null,player:Object.assign({},s.player,{hull:Math.floor(s.player.maxHull*0.5),shields:Math.floor(s.player.maxShields*0.5),resources:{metals:Math.floor((s.player.resources.metals||0)*0.5),crystals:Math.floor((s.player.resources.crystals||0)*0.5),fuel:Math.max(20,Math.floor((s.player.resources.fuel||0)*0.5)),tech:Math.floor((s.player.resources.tech||0)*0.5)}}),log:["Respawned. Resources halved.",...s.log].slice(0,30)});});}
+
+  var currentSystem=S.systems.find(function(s){return s.id===S.currentSystemId;});
+  var orbitSystem=S.orbitSystemId!==null?S.systems.find(function(s){return s.id===S.orbitSystemId;}):null;
+  var orbitPlanet=orbitSystem&&S.orbitPlanetId!==null?orbitSystem.planets.find(function(p){return p.id===S.orbitPlanetId;}):null;
+  function goToSolarSystem(){upd(function(s){return Object.assign({},s,{view:"solar_system"});});}
+  function goGalaxy(){upd(function(s){return Object.assign({},s,{view:"galaxy"});});}
+  function goStarbase(){upd(function(s){return Object.assign({},s,{view:"starbase",lastStarbaseId:s.currentSystemId});});}
+  function leaveStarbase(){upd(function(s){return Object.assign({},s,{view:"solar_system"});});}
+  function goBackToSystem(){upd(function(s){return Object.assign({},s,{view:"solar_system"});});}
+
+  return(
+    <div style={{background:C.bg,height:"100vh",height:"100dvh",color:C.text,fontFamily:"'Trebuchet MS',sans-serif",display:"flex",flexDirection:"column",maxWidth:isTablet?"900px":"480px",margin:"0 auto",position:"relative",overflow:"hidden"}}>
+
+      {confirmRestart&&(
+        <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(7,7,26,0.93)",zIndex:100,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div style={{fontSize:px(28),marginBottom:"12px"}}>↺</div>
+          <div style={{fontSize:px(17),fontWeight:"700",color:C.red,marginBottom:"8px"}}>Start New Game?</div>
+          <div style={{fontSize:px(13),color:C.dim,textAlign:"center",marginBottom:"24px",lineHeight:"1.6"}}>All progress will be lost.<br/>This cannot be undone.</div>
+          <div style={{display:"flex",gap:"12px"}}>
+            <button onClick={handleRestart} style={Object.assign({},bs(C.red,true),{padding:"12px 28px",fontSize:px(14)})}>New Game</button>
+            <button onClick={function(){setConfirmRestart(false);}} style={Object.assign({},bs(C.dim,true),{padding:"12px 28px",fontSize:px(14)})}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {S.view!=="surface"&&<Header player={S.player} onRestart={function(){setConfirmRestart(true);}} saveStatus={saveStatus}/>}
+      {(function(){
+        var showAlert=["galaxy","solar_system","orbit","starbase"].indexOf(S.view)>=0;
+        var fuel=S.player.resources.fuel||0;
+        if(!showAlert||fuel>=20)return null;
+        var critical=fuel<15;
+        return(
+          <div style={{background:critical?"rgba(255,80,0,0.15)":"rgba(255,153,51,0.1)",borderBottom:"1px solid "+(critical?C.red+"88":C.fuel+"66"),padding:"5px 14px",display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
+            <span style={{fontSize:px(14)}}>⛽</span>
+            <span style={{fontSize:px(12),color:critical?C.red:C.fuel,fontWeight:"600",flex:1}}>
+              {critical?"Critical: "+fuel+" fuel — cannot land safely":"Low fuel: "+fuel+" remaining"}
+            </span>
+            {S.view!=="starbase"&&<span style={{fontSize:px(11),color:C.dim}}>Refuel at Starbase</span>}
+          </div>
+        );
+      })()}
+      <div style={{flex:1,overflow:S.view==="surface"?"hidden":"auto",padding:S.view==="surface"?"calc(8px + env(safe-area-inset-top)) "+PAD+"px "+PAD+"px":PAD+"px"}}>
+        {S.view==="galaxy"&&<GalaxyView systems={S.systems} currentId={S.currentSystemId} player={S.player} onTap={handleCellTap}/>}
+        {S.view==="solar_system"&&<SolarSystemView system={currentSystem} onGalaxy={goGalaxy} onOrbitPlanet={handleOrbitPlanet} onStarbase={goStarbase}/>}
+        {S.view==="orbit"&&<OrbitView planet={orbitPlanet} system={orbitSystem} player={S.player} onBack={goBackToSystem} onScan={handleScan} onLand={handleLand} sensorLevel={S.player.upgrades.sensors||0}/>}
+        {S.view==="surface"&&<SurfaceView surface={S.surface} rover={S.rover} player={S.player} onMove={handleRoverMove} onLaser={handleLaser} onLiftoff={handleLiftoff} onRestart={function(){setConfirmRestart(true);}} surfaceLog={S.surfaceLog} system={orbitSystem} planet={orbitPlanet} roverSensorLevel={S.player.upgrades.roverSensor||0}/>}
+        {S.view==="combat"&&S.combat&&<CombatView combat={S.combat} player={S.player} onAction={handleCombatAction} onPower={adjustPower}/>}
+        {S.view==="starbase"&&<StarbaseView player={S.player} rover={S.rover} onBuy={buyUpgrade} onLeave={leaveStarbase} onBuyFuel={buyFuel} onRepair={repairShip} onRepairRover={repairRover} onBuyNewRover={buyNewRover} onReloadLaser={reloadLaser} onBuyPod={buyCargoPod} onBuyShip={buyShip} onSell={sellCargo}/>}
+        {S.view==="win"&&<WinView player={S.player} onRestart={function(){setS(makeState());}}/>}
+        {S.view==="dead"&&<DeadView onRespawn={respawn}/>}
+      </div>
+      <div style={{paddingTop:"8px",paddingLeft:PAD+"px",paddingRight:PAD+"px",paddingBottom:"calc(8px + env(safe-area-inset-bottom))",borderTop:"1px solid "+C.border,fontSize:px(13),color:C.dim,background:"rgba(0,0,0,0.4)",flexShrink:0}}>▶ {S.log[0]}</div>
+    </div>
+  );
+}
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(VoidAtlas));
+  </script>
+</body>
+</html>
